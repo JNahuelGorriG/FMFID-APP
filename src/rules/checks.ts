@@ -1,4 +1,4 @@
-import { D20_RANGES, OUTCOME_ORDER, differenceLevel, resolveHit } from './hit'
+import { differenceLevel, invertLevel, outcomeRanges, resolveHit } from './hit'
 import type { AutomaticOutcome, DifferenceLevel, Range, RollOutcome } from './hit'
 import type { Profile } from './profile'
 import type { StatName } from './types'
@@ -9,10 +9,13 @@ export interface CheckRow {
   side: Profile['side']
   targetValue: number
   difference: number
+  /** Nivel visto desde quien lanza el check. */
   level: DifferenceLevel
-  /** Rangos del d20 por resultado. null si el resultado es automático. */
+  /** El mismo enfrentamiento visto desde el afectado ("tiene que tirar con..."). */
+  inverseLevel: DifferenceLevel
+  /** Rangos del d20 de quien tira. null si el resultado es automático. */
   ranges: { outcome: RollOutcome; range: Range }[] | null
-  /** Resultado con el d20 indicado (si se indicó). */
+  /** Resultado de quien tira con el d20 indicado (si se indicó). */
   outcome: RollOutcome | AutomaticOutcome | null
 }
 
@@ -20,6 +23,9 @@ export interface CheckRow {
  * Stat check: un stat de un combatiente contra un stat de cada uno de los demás.
  * El nivel de cada fila depende del rango de quien lo recibe. Sirve igual para debuff checks,
  * maldiciones o cualquier tirada enfrentada (por ejemplo, Carisma contra Carisma).
+ *
+ * `roller` dice quién tira el d20: quien lanza el check (por defecto) o el afectado, que tira
+ * con el nivel inverso. Los rangos y el resultado de cada fila son los de quien tira.
  */
 export function statCheck(
   source: Profile,
@@ -27,15 +33,16 @@ export function statCheck(
   targets: Profile[],
   targetStat: StatName,
   d20?: number,
+  roller: 'source' | 'target' = 'source',
 ): CheckRow[] {
   const sourceValue = source.stats[sourceStat]
   return targets.map((t) => {
     const difference = sourceValue - t.stats[targetStat]
     const level = differenceLevel(difference, t.group)
-    const auto = level === 'fallo-inmune' || level === 'exito-asegurado'
-    const ranges = auto
-      ? null
-      : OUTCOME_ORDER.map((outcome, i) => ({ outcome, range: D20_RANGES[level][i] }))
+    const inverseLevel = invertLevel(level)
+    const rollLevel = roller === 'source' ? level : inverseLevel
+    const ranges = outcomeRanges(rollLevel)
+    const auto = ranges === null
     return {
       participantId: t.participantId,
       name: t.name,
@@ -43,8 +50,9 @@ export function statCheck(
       targetValue: t.stats[targetStat],
       difference,
       level,
+      inverseLevel,
       ranges,
-      outcome: auto || d20 !== undefined ? resolveHit(level, d20) : null,
+      outcome: auto || d20 !== undefined ? resolveHit(rollLevel, d20) : null,
     }
   })
 }

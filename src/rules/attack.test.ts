@@ -11,6 +11,11 @@ import {
   defenseAgainst,
   hitCheck,
   initialPcState,
+  invertLevel,
+  invertOutcome,
+  outcomeRanges,
+  clampSaturation,
+  saturationFor,
   isHit,
   newCombat,
   resolveHit,
@@ -88,7 +93,7 @@ describe('defensa: con armadura (CA) o sin ella (SA)', () => {
     const { combat, pc: id } = arena()
     const armored = updateParticipant(combat, id, (p) => ({
       ...p,
-      pc: p.pc ? { ...p.pc, armor: { type: 'pesada', rank: 'C', bonus: 130, usesMax: 18, usesLeft: 18 } } : null,
+      pc: p.pc ? { ...p.pc, armor: { type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica' as const, usesMax: 18, usesLeft: 18 } } : null,
     }))
     const profile = buildProfile(armored.participants[0], edward)!
     const d = defenseAgainst(profile, 'fisico')
@@ -100,13 +105,13 @@ describe('defensa: con armadura (CA) o sin ella (SA)', () => {
     const { combat, pc: id } = arena()
     const broken = updateParticipant(combat, id, (p) => ({
       ...p,
-      pc: p.pc ? { ...p.pc, armor: { type: 'pesada', rank: 'C', bonus: 130, usesMax: 18, usesLeft: 0 } } : null,
+      pc: p.pc ? { ...p.pc, armor: { type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica' as const, usesMax: 18, usesLeft: 0 } } : null,
     }))
     expect(defenseAgainst(buildProfile(broken.participants[0], edward)!, 'fisico').armored).toBe(false)
   })
 
   it('la armadura se arma desde las tablas', () => {
-    expect(armorFromTable('pesada', 'C')).toEqual({ type: 'pesada', rank: 'C', bonus: 130, usesMax: 18, usesLeft: 18 })
+    expect(armorFromTable('pesada', 'C')).toEqual({ type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica', usesMax: 18, usesLeft: 18 })
     expect(armorFromTable('ligera', 'A+').usesMax).toBe(0) // fuera de la tabla de usos
   })
 })
@@ -244,5 +249,88 @@ describe('stat check contra los demás combatientes', () => {
     expect(rows[0].level).toBe('exito-asegurado')
     expect(rows[0].ranges).toBeNull()
     expect(rows[0].outcome).toBe('exito-automatico')
+  })
+})
+
+describe('el enfrentamiento visto desde el otro lado', () => {
+  it('invierte el nivel: si el atacante tira con Mayor+, el defensor tira con Menor+', () => {
+    expect(invertLevel('mayor-plus')).toBe('menor-plus')
+    expect(invertLevel('menor')).toBe('mayor')
+    expect(invertLevel('normal')).toBe('normal')
+    expect(invertLevel('exito-asegurado')).toBe('fallo-inmune')
+    expect(invertLevel(invertLevel('mayor'))).toBe('mayor')
+  })
+
+  it('invierte el resultado: el éxito del defensor es un fallo del ataque', () => {
+    expect(invertOutcome('exito-critico')).toBe('fallo-critico')
+    expect(invertOutcome('fallo')).toBe('exito')
+    expect(invertOutcome('exito-automatico')).toBe('fallo-automatico')
+    expect(invertOutcome('fallo-mayor')).toBe('exito-mayor')
+  })
+
+  it('da los rangos del d20 de un nivel, o nada si es automático', () => {
+    expect(outcomeRanges('menor-plus')?.[3]).toEqual({ outcome: 'exito', range: [14, 17] })
+    expect(outcomeRanges('exito-asegurado')).toBeNull()
+  })
+
+  it('en un check, el afectado tira con el nivel inverso y su resultado', () => {
+    const { pc, npc } = profiles()
+    const strong = { ...npc, stats: { ...npc.stats, carisma: 300 } } // +127 contra 173: Mayor en rango medio
+    const asSource = statCheck(strong, 'carisma', [pc], 'carisma', 12, 'source')[0]
+    const asTarget = statCheck(strong, 'carisma', [pc], 'carisma', 12, 'target')[0]
+    expect(asSource.level).toBe('mayor')
+    expect(asSource.inverseLevel).toBe('menor')
+    expect(asSource.ranges?.[3].range).toEqual([9, 14]) // éxito con Mayor
+    expect(asTarget.ranges?.[3].range).toEqual([13, 17]) // éxito con Menor
+    expect(asSource.outcome).toBe('exito')
+    expect(asTarget.outcome).toBe('fallo') // 12 con Menor: 7-12 es fallo
+  })
+})
+
+describe('armadura que suma a un solo stat', () => {
+  const armoredProfile = (bonusTarget: 'fisica' | 'magica' | 'ambas') => {
+    const { combat, pc: id } = arena()
+    const next = updateParticipant(combat, id, (p) => ({
+      ...p,
+      pc: p.pc ? { ...p.pc, armor: { ...armorFromTable('pesada', 'C'), bonusTarget } } : null,
+    }))
+    return buildProfile(next.participants[0], edward)!
+  }
+
+  it('física: suma a la defensa física pero no a la mágica', () => {
+    const p = armoredProfile('fisica')
+    expect(defenseAgainst(p, 'fisico').value).toBeCloseTo(447.64 + 130, 2)
+    expect(defenseAgainst(p, 'magico')).toEqual({ value: p.defense.magico.ca, armored: true })
+  })
+
+  it('mágica: al revés', () => {
+    const p = armoredProfile('magica')
+    expect(defenseAgainst(p, 'fisico').value).toBeCloseTo(447.64, 2)
+    expect(defenseAgainst(p, 'magico').value).toBeCloseTo(p.defense.magico.ca + 130, 2)
+  })
+
+  it('ambas: suma a las dos', () => {
+    const p = armoredProfile('ambas')
+    expect(defenseAgainst(p, 'fisico').value).toBeCloseTo(447.64 + 130, 2)
+    expect(defenseAgainst(p, 'magico').value).toBeCloseTo(p.defense.magico.ca + 130, 2)
+  })
+})
+
+describe('barra de saturación', () => {
+  it('sube 1 % por herida leve, 3 % por media y 9 % por letal', () => {
+    expect(saturationFor({ leve: 1, medio: 0, letal: 0 })).toBe(1)
+    expect(saturationFor({ leve: 0, medio: 1, letal: 0 })).toBe(3)
+    expect(saturationFor({ leve: 0, medio: 0, letal: 1 })).toBe(9)
+    expect(saturationFor({ leve: 2, medio: 2, letal: 1 })).toBe(17)
+  })
+
+  it('va de 0 a 100 %', () => {
+    expect(clampSaturation(-5)).toBe(0)
+    expect(clampSaturation(140)).toBe(100)
+    expect(clampSaturation(42)).toBe(42)
+  })
+
+  it('el jugador entra al combate con la barra en 0', () => {
+    expect(initialPcState(edward).saturation).toBe(0)
   })
 })

@@ -35,10 +35,32 @@ export function migrateCombat(
     const legacy = states.find((s) => s.characterId === p.characterId)
     if (legacy) {
       const { characterId: _id, ...rest } = legacy
-      return { ...p, side, pc: { ...rest, armor: null } }
+      return { ...p, side, pc: { ...rest, armor: null, saturation: 0 } }
     }
     const character = characters.find((c) => c.id === p.characterId)
     return { ...p, side, pc: character ? initialPcState(character) : null }
   })
   return { ...combat, participants, history: combat.history ?? [] }
+}
+
+/**
+ * Completa en un combate los datos que se agregaron después (saturación de los jugadores y
+ * a qué defensa suma la armadura), para combates guardados con versiones anteriores.
+ */
+export function normalizeCombat(combat: Combat): Combat {
+  return {
+    ...combat,
+    participants: combat.participants.map((p) =>
+      p.pc
+        ? {
+            ...p,
+            pc: {
+              ...p.pc,
+              saturation: p.pc.saturation ?? 0,
+              armor: p.pc.armor ? { ...p.pc.armor, bonusTarget: p.pc.armor.bonusTarget ?? 'fisica' } : null,
+            },
+          }
+        : p,
+    ),
+  }
 }

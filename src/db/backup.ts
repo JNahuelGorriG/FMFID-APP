@@ -1,9 +1,9 @@
 import type { AppDB, ChangeRecord, Setting } from './db'
-import { migrateCombat } from './migrations'
+import { migrateCombat, normalizeCombat } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
 import type { Character, Combat, Npc } from '../rules'
 
-export const BACKUP_VERSION = 4
+export const BACKUP_VERSION = 5
 
 export interface BackupFile {
   app: 'fmfid-app'
@@ -60,7 +60,7 @@ export async function importBackup(db: AppDB, data: unknown): Promise<void> {
     throw new Error('El respaldo es de una versión más nueva de la app.')
   }
   const combats = ((data.combats ?? []) as unknown as LegacyCombat[]).map((c) =>
-    migrateCombat(c, data.characters, data.characterStates ?? []),
+    normalizeCombat(migrateCombat(c, data.characters, data.characterStates ?? [])),
   )
   await db.transaction('rw', [db.characters, db.changes, db.npcs, db.combats, db.settings], async () => {
     await Promise.all([

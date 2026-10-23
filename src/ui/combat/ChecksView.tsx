@@ -16,6 +16,7 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
     () => new Set(profiles.filter((p) => p.participantId !== profiles[0]?.participantId).map((p) => p.participantId)),
   )
   const [d20, setD20] = useState<number | undefined>(undefined)
+  const [roller, setRoller] = useState<'source' | 'target'>('source')
 
   const source = profiles.find((p) => p.participantId === sourceId) ?? profiles[0]
   if (!source) return <p className="muted small">Agrega participantes para hacer checks.</p>
@@ -23,7 +24,7 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
   const targets = profiles.filter((p) => p.participantId !== source.participantId && selected.has(p.participantId))
   const against = sameStat ? sourceStat : targetStat
   const rolled = d20 !== undefined && Number.isInteger(d20) && d20 >= 1 && d20 <= 20 ? d20 : undefined
-  const rows = statCheck(source, sourceStat, targets, against, rolled)
+  const rows = statCheck(source, sourceStat, targets, against, rolled, roller)
 
   return (
     <>
@@ -55,6 +56,15 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
         <p className="small">
           {source.name} · {STAT_LABELS[sourceStat]}: <strong>{fmt(source.stats[sourceStat])}</strong>
         </p>
+        <SelectField
+          label="Quién tira el d20"
+          value={roller}
+          options={[
+            { value: 'source' as const, label: 'Quien lanza el check' },
+            { value: 'target' as const, label: 'Cada afectado' },
+          ]}
+          onChange={setRoller}
+        />
         <OptionalNumberField label="Tirada (d20, opcional)" value={d20} onChange={setD20} />
       </div>
 
@@ -79,11 +89,12 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
                     {SIDE_LABELS[r.side]} · {STAT_LABELS[against]} {fmt(r.targetValue)}
                   </span>
                 </span>
-                <span className="chip">{LEVEL_LABELS[r.level]}</span>
+                <span className="chip">{LEVEL_LABELS[roller === 'source' ? r.level : r.inverseLevel]}</span>
               </div>
               <p className="small">
                 Diferencia {r.difference >= 0 ? '+' : ''}
-                {fmt(r.difference)}
+                {fmt(r.difference)} · {source.name} tira con <strong>{LEVEL_LABELS[r.level]}</strong> · {r.name} tira con{' '}
+                <strong>{LEVEL_LABELS[r.inverseLevel]}</strong>
               </p>
               {r.ranges ? (
                 <p className="small muted">
@@ -92,7 +103,12 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
               ) : (
                 <p className="small muted">Sin tirada: resultado automático.</p>
               )}
-              {r.outcome && <p className="result">{OUTCOME_LABELS[r.outcome]}</p>}
+              {r.outcome && (
+                <p className="result">
+                  {roller === 'target' ? `Resultado de ${r.name}: ` : ''}
+                  {OUTCOME_LABELS[r.outcome]}
+                </p>
+              )}
             </div>
           ))}
         </div>

@@ -207,3 +207,39 @@ describe('actualización de la base desde la versión 3', () => {
     upgraded.close()
   })
 })
+
+describe('actualización de la base desde la versión 4', () => {
+  it('completa la saturación y el destino de la armadura de los combates guardados', async () => {
+    const name = `test-${crypto.randomUUID()}`
+    const old = new Dexie(name)
+    old.version(4).stores({
+      characters: 'id, name, playerName, retired',
+      changes: 'id, characterId, at',
+      npcs: 'id, name, rank, realm, guild, race',
+      combats: 'id, status, updatedAt',
+      settings: 'key',
+    })
+    await old.table('combats').add({
+      id: 'c1', name: 'Viejo', status: 'activo', round: 1, activeId: null, alerts: [], history: [],
+      createdAt: '', updatedAt: '',
+      participants: [
+        {
+          id: 'p1', kind: 'pc', characterId: 'x', name: 'Roy', side: 'jugador', initiative: 5, npc: null,
+          pc: {
+            health: { leve: 8, medio: 5, letal: 2 }, barriers: [], mana: { natural: 1, renovable: 1 },
+            stamina: { natural: 1, renovable: 1 }, saves: { current: 2, max: 2, unique: 0, battery: 0 }, effects: [],
+            armor: { type: 'ligera', rank: 'C', bonus: 65, usesMax: 10, usesLeft: 7 },
+          },
+        },
+      ],
+    })
+    old.close()
+
+    const upgraded = new AppDB(name)
+    const pc = (await upgraded.combats.get('c1'))?.participants[0].pc
+    expect(pc?.saturation).toBe(0)
+    expect(pc?.armor?.bonusTarget).toBe('fisica')
+    expect(pc?.armor?.usesLeft).toBe(7)
+    upgraded.close()
+  })
+})

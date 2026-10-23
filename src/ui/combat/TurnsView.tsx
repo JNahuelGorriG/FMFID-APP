@@ -121,6 +121,7 @@ function ParticipantCard({
     summary = `Vida ${h.leve} · ${h.medio} · ${h.letal}`
     if (participant.pc.barriers.length > 0) summary += ` · ${participant.pc.barriers.length} barrera(s)`
     summary += ` · Salvaciones ${participant.pc.saves.current}`
+    if ((participant.pc.saturation ?? 0) > 0) summary += ` · Saturación ${participant.pc.saturation} %`
     if (participant.pc.armor) summary += ` · Armadura ${participant.pc.armor.usesLeft}/${participant.pc.armor.usesMax}`
   } else if (participant.npc) {
     summary = `Vida ${participant.npc.hpCurrent} / ${participant.npc.hpMax}`

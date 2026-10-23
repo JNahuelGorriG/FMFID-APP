@@ -220,3 +220,6 @@ details[open] > summary { margin-bottom: 8px; }
 .cmp td.max { color: var(--accent-soft); font-weight: 700; }
 .cmp td.min { color: var(--muted); }
 .result { font-weight: 700; color: var(--accent-soft); margin: 6px 0; }
+
+.bar { height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-bottom: 8px; }
+.bar-fill { height: 100%; background: var(--accent); transition: width 0.2s ease; }

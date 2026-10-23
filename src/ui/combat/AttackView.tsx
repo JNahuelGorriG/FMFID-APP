@@ -7,7 +7,10 @@ import {
   applyToPc,
   damageStage,
   hitCheck,
+  invertLevel,
+  invertOutcome,
   isHit,
+  outcomeRanges,
   recordAction,
   resistanceResult,
   resolveHit,
@@ -16,7 +19,6 @@ import {
   woundsForPc,
 } from '../../rules'
 import type { AttackType, Combat, Profile, StatName } from '../../rules'
-import { D20_RANGES, OUTCOME_ORDER } from '../../rules'
 import { combatRepo } from '../data'
 import { NumberField, OptionalNumberField, SelectField } from '../fields'
 import { LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, woundsText } from '../format'
@@ -42,6 +44,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const [attackerStat, setAttackerStat] = useState<StatName>('destreza')
   const [defenderStat, setDefenderStat] = useState<StatName>('percepcion')
   const [d20, setD20] = useState<number | undefined>(undefined)
+  const [rollerChoice, setRollerChoice] = useState<'atacante' | 'defensor' | null>(null)
   const [force, setForce] = useState(false)
   const [damage, setDamage] = useState<number | undefined>(undefined)
   const [defense, setDefense] = useState<number | undefined>(undefined)
@@ -60,9 +63,16 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   }
 
   const check = hitCheck(attacker, defender, attackerStat, defenderStat)
-  const auto = check.level === 'fallo-inmune' || check.level === 'exito-asegurado'
+  const inverse = invertLevel(check.level)
+  // Los NPC no tiran dados: cuando ataca un NPC a un jugador, tira el jugador con el nivel inverso.
+  const roller = rollerChoice ?? (attacker.kind === 'npc' && defender.kind === 'pc' ? 'defensor' : 'atacante')
+  const rollLevel = roller === 'atacante' ? check.level : inverse
+  const ranges = outcomeRanges(rollLevel)
+  const auto = ranges === null
   const rolled = validRoll(d20, 20) ? d20 : undefined
-  const outcome = auto ? resolveHit(check.level) : rolled !== undefined ? resolveHit(check.level, rolled) : null
+  const rollOutcome = auto ? resolveHit(rollLevel) : rolled !== undefined ? resolveHit(rollLevel, rolled) : null
+  // Resultado del ataque: si tira el defensor, su éxito es un fallo del ataque.
+  const outcome = rollOutcome === null ? null : roller === 'atacante' ? rollOutcome : invertOutcome(rollOutcome)
   const hit = outcome === null ? null : isHit(outcome)
   const canDamage = hit === true || force
 
@@ -88,6 +98,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
 
   function reset() {
     setD20(undefined)
+    setRollerChoice(null)
     setForce(false)
     setDamage(undefined)
     setDefense(undefined)
@@ -173,17 +184,44 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
         </p>
         <p className="small">
           Diferencia {check.difference >= 0 ? '+' : ''}
-          {fmt(check.difference)} · nivel <strong>{LEVEL_LABELS[check.level]}</strong>
+          {fmt(check.difference)}
         </p>
+        <p className="small">
+          Si tira el atacante: <strong>{LEVEL_LABELS[check.level]}</strong> · Si tira el defensor:{' '}
+          <strong>{LEVEL_LABELS[inverse]}</strong>
+        </p>
+        <SelectField
+          label="Quién tira el d20"
+          value={roller}
+          options={[
+            { value: 'atacante' as const, label: 'El atacante' },
+            { value: 'defensor' as const, label: 'El defensor' },
+          ]}
+          onChange={setRollerChoice}
+        />
+        {roller === 'defensor' && (
+          <p className="small">
+            {defender.name} tira con <strong>{LEVEL_LABELS[inverse]}</strong>.
+          </p>
+        )}
         {auto ? (
           <p className="muted small">Sin tirada: resultado automático.</p>
         ) : (
           <p className="muted small">
-            {OUTCOME_ORDER.map((o, i) => `${OUTCOME_LABELS[o]} ${rangeText(D20_RANGES[check.level as keyof typeof D20_RANGES][i])}`).join(' · ')}
+            {ranges.map((x) => `${OUTCOME_LABELS[x.outcome]} ${rangeText(x.range)}`).join(' · ')}
           </p>
         )}
-        {!auto && <OptionalNumberField label="Tirada del atacante (d20)" value={d20} onChange={setD20} />}
-        {outcome && <p className="result">{OUTCOME_LABELS[outcome]}</p>}
+        {!auto && (
+          <OptionalNumberField
+            label={roller === 'atacante' ? 'Tirada del atacante (d20)' : 'Tirada del defensor (d20)'}
+            value={d20}
+            onChange={setD20}
+          />
+        )}
+        {rollOutcome && roller === 'defensor' && (
+          <p className="small">Resultado del defensor: {OUTCOME_LABELS[rollOutcome]}</p>
+        )}
+        {outcome && <p className="result">Ataque: {OUTCOME_LABELS[outcome]}</p>}
         {hit === false && (
           <>
             <label className="check">

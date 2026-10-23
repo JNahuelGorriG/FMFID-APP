@@ -83,15 +83,18 @@ export function buildProfile(participant: Participant, character?: Character): P
 
 /**
  * Defensa que cuenta contra un ataque: con armadura puesta y con usos, es la CA más el valor
- * de la armadura. Sin armadura (o con la armadura agotada), la defensa natural SA.
+ * de la armadura (si suma a esa defensa). Sin armadura (o con la armadura agotada), la defensa natural SA.
  */
 export function defenseAgainst(
   profile: Profile,
   type: AttackType,
 ): { value: number; armored: boolean } {
   const d = profile.defense[type]
-  if (profile.armor && profile.armor.usesLeft > 0) {
-    return { value: d.ca + profile.armor.bonus, armored: true }
+  const armor = profile.armor
+  if (armor && armor.usesLeft > 0) {
+    const target = armor.bonusTarget ?? 'fisica'
+    const applies = target === 'ambas' || target === (type === 'fisico' ? 'fisica' : 'magica')
+    return { value: d.ca + (applies ? armor.bonus : 0), armored: true }
   }
   return { value: d.sa, armored: false }
 }

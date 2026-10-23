@@ -1,7 +1,7 @@
 import Dexie from 'dexie'
 import type { EntityTable } from 'dexie'
 import type { Character, Combat, Npc } from '../rules'
-import { migrateCombat } from './migrations'
+import { migrateCombat, normalizeCombat } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
 
 /** Registro de cada cambio de un dato de un personaje. */
@@ -64,6 +64,19 @@ export class AppDB extends Dexie {
         const states: LegacyState[] = await tx.table('characterStates').toArray()
         const combats: LegacyCombat[] = await tx.table('combats').toArray()
         await tx.table('combats').bulkPut(combats.map((c) => migrateCombat(c, characters, states)))
+      })
+    // Versión 5: saturación por curación y destino del valor de la armadura.
+    this.version(5)
+      .stores({
+        characters: 'id, name, playerName, retired',
+        changes: 'id, characterId, at',
+        npcs: 'id, name, rank, realm, guild, race',
+        combats: 'id, status, updatedAt',
+        settings: 'key',
+      })
+      .upgrade(async (tx) => {
+        const combats: Combat[] = await tx.table('combats').toArray()
+        await tx.table('combats').bulkPut(combats.map(normalizeCombat))
       })
   }
 }

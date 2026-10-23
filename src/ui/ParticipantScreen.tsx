@@ -14,6 +14,7 @@ import {
   updateParticipant,
 } from '../rules'
 import type {
+  ArmorTarget,
   ArmorType,
   Character,
   Combat,
@@ -23,6 +24,7 @@ import type {
   Participant,
   PcState,
 } from '../rules'
+import { clampSaturation, SATURATION_PER_WOUND } from '../rules'
 import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
 import { NumberField, SelectField, Stepper } from './fields'
@@ -105,6 +107,11 @@ const ARMOR_OPTIONS: { value: ArmorType; label: string }[] = [
   { value: 'mediana', label: 'Mediana' },
   { value: 'pesada', label: 'Pesada' },
 ]
+const TARGET_OPTIONS: { value: ArmorTarget; label: string }[] = [
+  { value: 'fisica', label: 'Defensa física' },
+  { value: 'magica', label: 'Defensa mágica' },
+  { value: 'ambas', label: 'Ambas defensas' },
+]
 const RANK_OPTIONS = RANKS.map((r) => ({ value: r.name, label: r.name }))
 
 function ChangedValues({ rows }: { rows: [string, number, number][] }) {
@@ -150,6 +157,7 @@ function PcPanel({
   const bases = naturalBases(sheet.totals, sheet.derived)
   const base = character.baseHealth
   const state = pc
+  const saturation = pc.saturation ?? 0
 
   const [bLeve, setBLeve] = useState(0)
   const [bMedio, setBMedio] = useState(0)
@@ -229,6 +237,39 @@ function PcPanel({
       </div>
 
       <div className="card">
+        <h2>Saturación por curación</h2>
+        <div
+          className="bar"
+          role="progressbar"
+          aria-label="Saturación"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={saturation}
+        >
+          <div className="bar-fill" style={{ width: `${saturation}%` }} />
+        </div>
+        <Stepper
+          label="Saturación (%)"
+          value={saturation}
+          min={0}
+          max={100}
+          onChange={(v) => void update((s) => ({ ...s, saturation: clampSaturation(v) }))}
+        />
+        <div className="actions">
+          {(['leve', 'medio', 'letal'] as const).map((k) => (
+            <button
+              key={k}
+              className="btn secondary compact"
+              onClick={() => void update((s) => ({ ...s, saturation: clampSaturation((s.saturation ?? 0) + SATURATION_PER_WOUND[k]) }))}
+            >
+              Curó 1 {k} (+{SATURATION_PER_WOUND[k]} %)
+            </button>
+          ))}
+        </div>
+        <p className="muted small">No suma sola: la llevas tú cuando el jugador se cura.</p>
+      </div>
+
+      <div className="card">
         <h2>Armadura</h2>
         {state.armor ? (
           <>
@@ -244,6 +285,14 @@ function PcPanel({
                 value={state.armor.rank}
                 options={RANK_OPTIONS}
                 onChange={(rank) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, rank } : s.armor }))}
+              />
+              <SelectField
+                label="La armadura suma a"
+                value={state.armor.bonusTarget ?? 'fisica'}
+                options={TARGET_OPTIONS}
+                onChange={(bonusTarget) =>
+                  void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, bonusTarget } : s.armor }))
+                }
               />
               <NumberField
                 label="Valor que suma a la defensa"
@@ -282,7 +331,7 @@ function PcPanel({
               </button>
             </div>
             <p className="muted small">
-              Con armadura y usos, la defensa es la CA más este valor. Sin armadura, cuenta la defensa natural SA.
+              Con armadura y usos, la defensa elegida es la CA más este valor. Sin armadura, cuenta la defensa natural SA.
             </p>
           </>
         ) : (

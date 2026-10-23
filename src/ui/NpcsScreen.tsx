@@ -40,7 +40,7 @@ export function NpcsScreen({ onOpen, onCreated, onGoMore }: Props) {
             />
           </label>
           <p className="muted small">
-            {npcs.length} de {total}
+            {npcs.length} de {total} · Para filtrar por rango escribe solo el rango (B, B+, A…)
           </p>
           <ul className="list">
             {npcs.map((n) => (

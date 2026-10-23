@@ -15,13 +15,17 @@ export interface EnergyPools {
   renovable: number
 }
 
+export type ArmorTarget = 'fisica' | 'magica' | 'ambas'
+
 /** Armadura puesta de un jugador en un combate, con sus usos. */
 export interface ArmorState {
   type: ArmorType
   /** Rango de la armadura (E a SSS+). */
   rank: string
-  /** Valor que suma a la defensa CA (física y mágica). Lo puede poner el GM a mano. */
+  /** Valor que suma a la defensa CA. Lo puede poner el GM a mano. */
   bonus: number
+  /** A qué defensa suma el valor. Una armadura suma a un solo stat, salvo que se indique "ambas". */
+  bonusTarget: ArmorTarget
   usesMax: number
   usesLeft: number
 }
@@ -30,7 +34,7 @@ export interface ArmorState {
 export function armorFromTable(type: ArmorType, rank: string): ArmorState {
   const found = RANKS.find((r) => r.name === rank) ?? RANKS[0]
   const uses = armorUses(found.name, type)?.total ?? 0
-  return { type, rank: found.name, bonus: armorBonus(found, type), usesMax: uses, usesLeft: uses }
+  return { type, rank: found.name, bonus: armorBonus(found, type), bonusTarget: 'fisica', usesMax: uses, usesLeft: uses }
 }
 
 /**
@@ -45,6 +49,8 @@ export interface PcState {
   saves: Saves
   effects: Effect[]
   armor: ArmorState | null
+  /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
+  saturation: number
 }
 
 /** Estado inicial al entrar a un combate: vida y energías llenas, sin armadura puesta. */
@@ -58,6 +64,7 @@ export function initialPcState(character: Character): PcState {
     saves: defaultSaves(),
     effects: [],
     armor: null,
+    saturation: 0,
   }
 }
 

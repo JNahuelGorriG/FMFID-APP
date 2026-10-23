@@ -57,3 +57,21 @@ describe('respaldo con NPCs', () => {
     expect(await repo.list()).toEqual([])
   })
 })
+
+describe('búsqueda por rango', () => {
+  it('un rango escrito solo coincide exactamente, sin traer lo que lo contiene', async () => {
+    for (const [name, rank] of [['Bela', 'B'], ['Brix', 'B+'], ['Abel', 'A'], ['Alba', 'A+'], ['Sol', 'SS+']]) {
+      await repo.create({ ...newNpcTemplate(), name, rank })
+    }
+    expect((await repo.list('B')).map((n) => n.name)).toEqual(['Bela'])
+    expect((await repo.list('b+')).map((n) => n.name)).toEqual(['Brix'])
+    expect((await repo.list('A')).map((n) => n.name)).toEqual(['Abel'])
+    expect((await repo.list('ss+')).map((n) => n.name)).toEqual(['Sol'])
+  })
+
+  it('un texto más largo sigue buscando en todos los campos', async () => {
+    await repo.create({ ...newNpcTemplate(), name: 'Alice', rank: 'SS+' })
+    await repo.create({ ...newNpcTemplate(), name: 'Zoe', occupation: 'Alchemist' })
+    expect((await repo.list('al')).map((n) => n.name)).toEqual(['Alice', 'Zoe'])
+  })
+})

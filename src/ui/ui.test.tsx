@@ -275,7 +275,7 @@ describe('app', () => {
     fireEvent.click(screen.getByText('Cargar valores de la tabla'))
     await waitFor(async () => {
       const [c] = await combatRepo.list()
-      expect(c.participants[0].pc?.armor).toEqual({ type: 'pesada', rank: 'C', bonus: 130, usesMax: 18, usesLeft: 18 })
+      expect(c.participants[0].pc?.armor).toEqual({ type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica', usesMax: 18, usesLeft: 18 })
     })
   })
 
@@ -333,7 +333,7 @@ describe('app', () => {
     goTo('Ataque')
     // Edward Destreza 253 contra Percepción 250 del Goblin: diferencia +3, nivel normal
     fireEvent.change(await screen.findByLabelText('Tirada del atacante (d20)'), { target: { value: '15' } })
-    expect(await screen.findByText('Éxito')).toBeTruthy()
+    expect(await screen.findByText('Ataque: Éxito')).toBeTruthy()
 
     fireEvent.click(await screen.findByText('Confirmar y aplicar'))
     await waitFor(async () => {
@@ -353,9 +353,10 @@ describe('app', () => {
     await setUpDuel()
     goTo('Ataque')
     fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: (await combatRepo.list())[0].participants[1].id } })
-    // Goblin Destreza 350 contra Percepción 297 de Edward: +53, normal
-    fireEvent.change(await screen.findByLabelText('Tirada del atacante (d20)'), { target: { value: '18' } })
-    expect(await screen.findByText('Éxito mayor')).toBeTruthy()
+    // Goblin Destreza 350 contra Percepción 297 de Edward: +53, normal. Un NPC no tira: tira el jugador.
+    fireEvent.change(await screen.findByLabelText('Tirada del defensor (d20)'), { target: { value: '3' } })
+    expect(await screen.findByText('Resultado del defensor: Fallo mayor')).toBeTruthy()
+    expect(screen.getByText('Ataque: Éxito mayor')).toBeTruthy()
 
     fireEvent.change(await screen.findByLabelText('d8 de resistencia'), { target: { value: '3' } }) // 3 + 6 = 9
     expect(await screen.findByText(/Resistencia 9/)).toBeTruthy()
@@ -378,5 +379,81 @@ describe('app', () => {
       expect(c.alerts[0].text).toContain('Edward falla contra Goblin')
       expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.hpCurrent).toBe(10)
     })
+  })
+
+  it('ataque: muestra el nivel inverso para el defensor ("tenés que tirar con...")', async () => {
+    await setUpDuel()
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Stat del atacante'), { target: { value: 'fuerza' } })
+    fireEvent.change(screen.getByLabelText('Stat del defensor'), { target: { value: 'constitucion' } })
+    // Fuerza 357 contra Constitución 250 del Goblin: +107, rango medio → Mayor para el atacante, Menor para el defensor
+    expect(await screen.findByText(/Si tira el atacante:/)).toBeTruthy()
+    const line = screen.getByText(/Si tira el atacante:/).textContent ?? ''
+    expect(line).toContain('Mayor')
+    expect(line).toContain('Menor')
+
+    fireEvent.change(screen.getByLabelText('Quién tira el d20'), { target: { value: 'defensor' } })
+    expect(await screen.findByText(/tira con/)).toBeTruthy()
+    expect(screen.getByLabelText('Tirada del defensor (d20)')).toBeTruthy()
+  })
+
+  it('checks: el afectado puede tirar con el nivel inverso', async () => {
+    await setUpDuel()
+    goTo('Checks')
+    fireEvent.change(await screen.findByLabelText('Su stat'), { target: { value: 'fuerza' } })
+    const results = await screen.findByLabelText('Resultados del check')
+    expect(results.textContent).toContain('tira con')
+    fireEvent.change(screen.getByLabelText('Quién tira el d20'), { target: { value: 'target' } })
+    fireEvent.change(screen.getByLabelText('Tirada (d20, opcional)'), { target: { value: '12' } })
+    await waitFor(() => expect(screen.getByLabelText('Resultados del check').textContent).toContain('Resultado de Goblin'))
+  })
+
+  it('participante: la barra de saturación sube con los atajos y se puede ajustar', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    fireEvent.click(await screen.findByText('Curó 1 medio (+3 %)'))
+    fireEvent.click(screen.getByText('Curó 1 letal (+9 %)'))
+    await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('12'))
+
+    fireEvent.click(screen.getByLabelText('Saturación (%): menos'))
+    await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('11'))
+  })
+
+  it('participante: la armadura suma a un solo stat, editable', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+    fireEvent.click(await screen.findByText('Poner armadura'))
+    fireEvent.change(await screen.findByLabelText('La armadura suma a'), { target: { value: 'magica' } })
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.armor?.bonusTarget).toBe('magica')
+    })
+  })
+
+  it('NPCs: al buscar un rango solo salen los de ese rango exacto', async () => {
+    for (const [name, rank] of [['Bela', 'B'], ['Brix', 'B+'], ['Abel', 'A'], ['Dorn', 'D']]) {
+      await npcRepo.create({ ...newNpcTemplate(), name, rank })
+    }
+    render(<App />)
+    fireEvent.click(screen.getByText('NPCs'))
+    fireEvent.change(await screen.findByLabelText('Buscar NPC'), { target: { value: 'B' } })
+    await waitFor(() => {
+      expect(screen.queryByText('Brix')).toBeNull()
+      expect(screen.queryByText('Abel')).toBeNull()
+    })
+    expect(screen.getByText('Bela')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Buscar NPC'), { target: { value: 'B+' } })
+    await waitFor(() => expect(screen.getByText('Brix')).toBeTruthy())
+    expect(screen.queryByText('Bela')).toBeNull()
   })
 })

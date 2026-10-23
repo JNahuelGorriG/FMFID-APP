@@ -90,3 +90,43 @@ export function resolveHit(level: DifferenceLevel, d20?: number): RollOutcome | 
   const index = ranges.findIndex(([min, max]) => d20 >= min && d20 <= max)
   return OUTCOME_ORDER[index]
 }
+
+const INVERSE_LEVEL: Record<DifferenceLevel, DifferenceLevel> = {
+  'exito-asegurado': 'fallo-inmune',
+  'mayor-plus': 'menor-plus',
+  mayor: 'menor',
+  normal: 'normal',
+  menor: 'mayor',
+  'menor-plus': 'mayor-plus',
+  'fallo-inmune': 'exito-asegurado',
+}
+
+/**
+ * El mismo enfrentamiento visto desde el otro lado: si el atacante tira con "Mayor+",
+ * el defensor tira con "Menor+".
+ */
+export function invertLevel(level: DifferenceLevel): DifferenceLevel {
+  return INVERSE_LEVEL[level]
+}
+
+const INVERSE_OUTCOME: Record<RollOutcome, RollOutcome> = {
+  'fallo-critico': 'exito-critico',
+  'fallo-mayor': 'exito-mayor',
+  fallo: 'exito',
+  exito: 'fallo',
+  'exito-mayor': 'fallo-mayor',
+  'exito-critico': 'fallo-critico',
+}
+
+/** Resultado del otro lado: si el defensor logra un éxito, el ataque tiene el fallo equivalente. */
+export function invertOutcome(outcome: RollOutcome | AutomaticOutcome): RollOutcome | AutomaticOutcome {
+  if (outcome === 'fallo-automatico') return 'exito-automatico'
+  if (outcome === 'exito-automatico') return 'fallo-automatico'
+  return INVERSE_OUTCOME[outcome]
+}
+
+/** Rangos del d20 de cada resultado para un nivel. null si el resultado es automático. */
+export function outcomeRanges(level: DifferenceLevel): { outcome: RollOutcome; range: Range }[] | null {
+  if (level === 'fallo-inmune' || level === 'exito-asegurado') return null
+  return OUTCOME_ORDER.map((outcome, i) => ({ outcome, range: D20_RANGES[level][i] }))
+}
