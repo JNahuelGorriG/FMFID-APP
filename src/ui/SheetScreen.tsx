@@ -1,15 +1,17 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { STAT_NAMES, characterSheet, splitEnergy } from '../rules'
 import { repo } from './data'
-import { STAT_LABELS, TIER_LABELS, fmt, fmtOrDash } from './format'
+import { STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue } from './format'
 
 interface Props {
   id: string
   onBack: () => void
+  onEdit: () => void
 }
 
-export function SheetScreen({ id, onBack }: Props) {
+export function SheetScreen({ id, onBack, onEdit }: Props) {
   const character = useLiveQuery(() => repo.get(id), [id])
+  const history = useLiveQuery(() => repo.history(id), [id])
 
   if (character === undefined) return <p className="muted">Cargando…</p>
 
@@ -31,6 +33,9 @@ export function SheetScreen({ id, onBack }: Props) {
           </div>
         </div>
         <span className="chip">{sheet.rank?.name ?? 'Sin rango'}</span>
+        <button className="btn secondary compact" onClick={onEdit}>
+          Editar
+        </button>
       </header>
 
       <div className="card stats" aria-label="Stats">
@@ -127,6 +132,22 @@ export function SheetScreen({ id, onBack }: Props) {
           <dt>Reiatsu</dt>
           <dd>{d.techniques.reiatsu}</dd>
         </dl>
+      </details>
+    
+      <details className="card">
+        <summary>Historial de cambios ({history?.length ?? 0})</summary>
+        {history && history.length === 0 && <p className="muted small">Todavía no hay cambios.</p>}
+        <ul className="history">
+          {(history ?? []).map((h) => (
+            <li key={h.id}>
+              <div className="small muted">{new Date(h.at).toLocaleString('es-AR')}</div>
+              <div>
+                {describePath(h.path)}: {fmtValue(h.oldValue)} → {fmtValue(h.newValue)}
+              </div>
+              {h.reason && <div className="small muted">{h.reason}</div>}
+            </li>
+          ))}
+        </ul>
       </details>
     </section>
   )

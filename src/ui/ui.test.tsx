@@ -66,4 +66,52 @@ describe('app', () => {
     fireEvent.click(screen.getByText('Más'))
     await waitFor(() => expect(screen.getByText('Exportar respaldo')).toBeTruthy())
   })
+
+  it('edita un dato, guarda con motivo y lo muestra en la ficha y el historial', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Editar'))
+
+    fireEvent.change(await screen.findByLabelText('Fuerza · Entrenamiento'), { target: { value: '60' } })
+    fireEvent.change(screen.getByLabelText('Motivo del cambio'), { target: { value: 'Entrenó en el dojo' } })
+    expect(screen.getByText('1 dato(s) para guardar.')).toBeTruthy()
+    fireEvent.click(screen.getByText('Guardar cambios'))
+
+    const stats = await screen.findByLabelText('Stats')
+    expect(stats.textContent).toContain('367,1')
+    expect(await screen.findByText('Historial de cambios (1)')).toBeTruthy()
+    expect(screen.getByText('Entrenó en el dojo')).toBeTruthy()
+    expect(screen.getByText('Fuerza · Entrenamiento: 50 → 60')).toBeTruthy()
+  })
+
+  it('no guarda un personaje inválido y explica el problema', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Editar'))
+
+    fireEvent.change(await screen.findByLabelText('Carisma · Tier'), { target: { value: '1' } })
+    fireEvent.click(screen.getByText('Guardar cambios'))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('2 stats primarios')
+    const saved = (await repo.list())[0]
+    expect(saved.tiers.carisma).toBe(2)
+  })
+
+  it('crea un personaje nuevo y abre su edición', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByText('Nuevo personaje'))
+    expect(await screen.findByText('Editar personaje')).toBeTruthy()
+    expect((await repo.list()).map((c) => c.name)).toEqual(['Nuevo personaje'])
+  })
+
+  it('cancelar sin cambios vuelve a la ficha', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Editar'))
+    fireEvent.click(await screen.findByText('Cancelar'))
+    expect(await screen.findByLabelText('Stats')).toBeTruthy()
+  })
 })

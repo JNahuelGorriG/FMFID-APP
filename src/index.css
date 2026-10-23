@@ -149,3 +149,21 @@ details summary { cursor: pointer; font-weight: 500; }
   transition: bottom 0.2s ease;
 }
 .nav-toggle.collapsed { bottom: 12px; }
+
+.field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.field input, .field select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  width: 100%;
+}
+.field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn.compact { padding: 6px 14px; font-weight: 500; }
+.btn.danger { background: transparent; border: 1px solid var(--accent); color: var(--accent-soft); margin: 4px 0 12px; }
+.errors { color: var(--accent-soft); padding-left: 1.1rem; margin: 0 0 8px; }
+.ref { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.history { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+details[open] > summary { margin-bottom: 8px; }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CharactersScreen } from './ui/CharactersScreen'
+import { EditScreen } from './ui/EditScreen'
 import { MoreScreen } from './ui/MoreScreen'
 import { Placeholder } from './ui/Placeholder'
 import { SheetScreen } from './ui/SheetScreen'
@@ -26,6 +27,7 @@ function readNavPreference(): boolean {
 export default function App() {
   const [tab, setTab] = useState<Tab>('personajes')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
   const [navOpen, setNavOpen] = useState(readNavPreference)
 
   function toggleNav() {
@@ -41,16 +43,33 @@ export default function App() {
   function goTo(next: Tab) {
     setTab(next)
     setOpenId(null)
+    setEditing(false)
   }
 
   return (
     <div className="app">
       <main className={navOpen ? 'content' : 'content nav-hidden'}>
         {tab === 'personajes' &&
-          (openId ? (
-            <SheetScreen id={openId} onBack={() => setOpenId(null)} />
+          (openId && editing ? (
+            <EditScreen
+              id={openId}
+              onDone={() => setEditing(false)}
+              onDeleted={() => {
+                setEditing(false)
+                setOpenId(null)
+              }}
+            />
+          ) : openId ? (
+            <SheetScreen id={openId} onBack={() => setOpenId(null)} onEdit={() => setEditing(true)} />
           ) : (
-            <CharactersScreen onOpen={setOpenId} onGoMore={() => goTo('mas')} />
+            <CharactersScreen
+              onOpen={setOpenId}
+              onCreated={(id) => {
+                setOpenId(id)
+                setEditing(true)
+              }}
+              onGoMore={() => goTo('mas')}
+            />
           ))}
         {tab === 'combate' && <Placeholder title="Combate" />}
         {tab === 'npcs' && <Placeholder title="NPCs" />}

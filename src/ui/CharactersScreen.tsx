@@ -1,14 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { characterSheet } from '../rules'
+import { characterSheet, newCharacterTemplate } from '../rules'
 import { repo } from './data'
 
 interface Props {
   onOpen: (id: string) => void
+  onCreated: (id: string) => void
   onGoMore: () => void
 }
 
-export function CharactersScreen({ onOpen, onGoMore }: Props) {
+export function CharactersScreen({ onOpen, onCreated, onGoMore }: Props) {
   const [showRetired, setShowRetired] = useState(false)
   const characters = useLiveQuery(
     () => repo.list({ includeRetired: showRetired }),
@@ -50,6 +51,15 @@ export function CharactersScreen({ onOpen, onGoMore }: Props) {
           })}
         </ul>
       )}
+
+      <div className="actions">
+        <button
+          className="btn secondary"
+          onClick={async () => onCreated((await repo.create(newCharacterTemplate())).id)}
+        >
+          Nuevo personaje
+        </button>
+      </div>
 
       <label className="check">
         <input
