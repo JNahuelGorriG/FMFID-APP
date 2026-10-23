@@ -1,7 +1,7 @@
 import Dexie from 'dexie'
 import type { EntityTable } from 'dexie'
 import type { Character, Combat, Npc } from '../rules'
-import { migrateCombat, normalizeCombat } from './migrations'
+import { migrateCombat, normalizeCombat, normalizeNpc } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
 
 /** Registro de cada cambio de un dato de un personaje. */
@@ -75,6 +75,21 @@ export class AppDB extends Dexie {
         settings: 'key',
       })
       .upgrade(async (tx) => {
+        const combats: Combat[] = await tx.table('combats').toArray()
+        await tx.table('combats').bulkPut(combats.map(normalizeCombat))
+      })
+    // Versión 6: bestiario (tipo de NPC) y saturación de los NPC en combate.
+    this.version(6)
+      .stores({
+        characters: 'id, name, playerName, retired',
+        changes: 'id, characterId, at',
+        npcs: 'id, name, kind, rank, realm, guild, race',
+        combats: 'id, status, updatedAt',
+        settings: 'key',
+      })
+      .upgrade(async (tx) => {
+        const npcs: Npc[] = await tx.table('npcs').toArray()
+        await tx.table('npcs').bulkPut(npcs.map(normalizeNpc))
         const combats: Combat[] = await tx.table('combats').toArray()
         await tx.table('combats').bulkPut(combats.map(normalizeCombat))
       })

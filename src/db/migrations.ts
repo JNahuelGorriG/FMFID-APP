@@ -1,5 +1,5 @@
 import { initialPcState } from '../rules'
-import type { Character, Combat, Participant, PcState } from '../rules'
+import type { Character, Combat, Npc, Participant, PcState } from '../rules'
 
 /** Estado vivo por personaje de las versiones anteriores (ya no existe). */
 export interface LegacyState {
@@ -60,7 +60,14 @@ export function normalizeCombat(combat: Combat): Combat {
               armor: p.pc.armor ? { ...p.pc.armor, bonusTarget: p.pc.armor.bonusTarget ?? 'fisica' } : null,
             },
           }
-        : p,
+        : p.npc
+          ? { ...p, npc: { ...p.npc, saturation: p.npc.saturation ?? 0 } }
+          : p,
     ),
   }
+}
+
+/** Los NPC guardados antes del bestiario son NPC. */
+export function normalizeNpc(npc: Npc): Npc {
+  return { ...npc, kind: npc.kind ?? 'npc' }
 }

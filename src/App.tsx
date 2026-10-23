@@ -9,6 +9,7 @@ import { NpcEditScreen } from './ui/NpcEditScreen'
 import { NpcScreen } from './ui/NpcScreen'
 import { NpcsScreen } from './ui/NpcsScreen'
 import { SheetScreen } from './ui/SheetScreen'
+import { TablesScreen } from './ui/TablesScreen'
 
 type Tab = 'personajes' | 'combate' | 'npcs' | 'mas'
 
@@ -35,6 +36,7 @@ export default function App() {
   const [editing, setEditing] = useState(false)
   const [openNpcId, setOpenNpcId] = useState<string | null>(null)
   const [editingNpc, setEditingNpc] = useState(false)
+  const [showTables, setShowTables] = useState(false)
   const [openCombatId, setOpenCombatId] = useState<string | null>(null)
   const [openParticipantId, setOpenParticipantId] = useState<string | null>(null)
   const [navOpen, setNavOpen] = useState(readNavPreference)
@@ -57,6 +59,7 @@ export default function App() {
     setEditingNpc(false)
     setOpenCombatId(null)
     setOpenParticipantId(null)
+    setShowTables(false)
   }
 
   return (
@@ -123,7 +126,12 @@ export default function App() {
               onGoMore={() => goTo('mas')}
             />
           ))}
-        {tab === 'mas' && <MoreScreen />}
+        {tab === 'mas' &&
+          (showTables ? (
+            <TablesScreen onBack={() => setShowTables(false)} />
+          ) : (
+            <MoreScreen onOpenTables={() => setShowTables(true)} />
+          ))}
       </main>
 
       <button

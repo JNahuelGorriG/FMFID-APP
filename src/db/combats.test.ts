@@ -243,3 +243,34 @@ describe('actualización de la base desde la versión 4', () => {
     upgraded.close()
   })
 })
+
+describe('actualización de la base desde la versión 5', () => {
+  it('los NPC guardados pasan a ser NPC y los de los combates reciben saturación', async () => {
+    const name = `test-${crypto.randomUUID()}`
+    const old = new Dexie(name)
+    old.version(5).stores({
+      characters: 'id, name, playerName, retired',
+      changes: 'id, characterId, at',
+      npcs: 'id, name, rank, realm, guild, race',
+      combats: 'id, status, updatedAt',
+      settings: 'key',
+    })
+    await old.table('npcs').add({ id: 'n1', name: 'Alice', rank: 'SS+', combat: null })
+    await old.table('combats').add({
+      id: 'c1', name: 'Viejo', status: 'activo', round: 0, activeId: null, alerts: [], history: [],
+      createdAt: '', updatedAt: '',
+      participants: [
+        {
+          id: 'p1', kind: 'npc', characterId: null, name: 'Goblin', side: 'enemigo', initiative: 1, pc: null,
+          npc: { profile: defaultEnemyProfile('D'), hpCurrent: 5, hpMax: 10, barriers: [], effects: [] },
+        },
+      ],
+    })
+    old.close()
+
+    const upgraded = new AppDB(name)
+    expect((await upgraded.npcs.get('n1'))?.kind).toBe('npc')
+    expect((await upgraded.combats.get('c1'))?.participants[0].npc?.saturation).toBe(0)
+    upgraded.close()
+  })
+})

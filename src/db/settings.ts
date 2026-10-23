@@ -3,6 +3,14 @@ import { DEFAULT_EFFECT_TYPES, SKILL_TYPE_ID } from '../rules'
 import type { EffectType } from '../rules'
 
 const EFFECT_TYPES_KEY = 'effectTypes'
+const REFERENCE_SHEETS_KEY = 'referenceSheets'
+
+/** Una hoja de referencia importada del Excel (por ejemplo los precios), solo para consultar. */
+export interface ReferenceSheet {
+  id: string
+  title: string
+  rows: string[][]
+}
 
 export function createSettingsRepository(db: AppDB) {
   return {
@@ -10,6 +18,12 @@ export function createSettingsRepository(db: AppDB) {
     async getEffectTypes(): Promise<EffectType[]> {
       const row = await db.settings.get(EFFECT_TYPES_KEY)
       return Array.isArray(row?.value) ? (row.value as EffectType[]) : DEFAULT_EFFECT_TYPES
+    },
+
+    /** Hojas de referencia importadas (precios, etc.). */
+    async getReferenceSheets(): Promise<ReferenceSheet[]> {
+      const row = await db.settings.get(REFERENCE_SHEETS_KEY)
+      return Array.isArray(row?.value) ? (row.value as ReferenceSheet[]) : []
     },
 
     /** Guarda los tipos. El tipo "habilidad" no se puede quitar. */

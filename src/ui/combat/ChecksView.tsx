@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { STAT_NAMES, statCheck } from '../../rules'
 import type { Profile, StatName } from '../../rules'
 import { OptionalNumberField, SelectField } from '../fields'
-import { LEVEL_LABELS, OUTCOME_LABELS, SIDE_LABELS, STAT_LABELS, fmt, rangeText } from '../format'
+import { LEVEL_LABELS, OUTCOME_LABELS, SIDE_LABELS, STAT_LABELS, fmt, rangeText, withRank } from '../format'
 import { PickParticipants } from './PickParticipants'
 
 const STAT_OPTIONS = STAT_NAMES.map((s) => ({ value: s, label: STAT_LABELS[s] }))
@@ -33,7 +33,7 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
         <SelectField
           label="Combatiente"
           value={source.participantId}
-          options={profiles.map((p) => ({ value: p.participantId, label: p.name }))}
+          options={profiles.map((p) => ({ value: p.participantId, label: withRank(p.name, p.rankName) }))}
           onChange={(id) => {
             setSourceId(id)
             setSelected((prev) => {

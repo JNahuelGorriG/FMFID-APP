@@ -75,6 +75,8 @@ export interface NpcParticipantState {
   hpMax: number
   barriers: NpcBarrier[]
   effects: Effect[]
+  /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
+  saturation: number
 }
 
 export function initialNpcState(profile: EnemyProfile): NpcParticipantState {
@@ -84,5 +86,6 @@ export function initialNpcState(profile: EnemyProfile): NpcParticipantState {
     hpMax: profile.hp.max,
     barriers: [],
     effects: [],
+    saturation: 0,
   }
 }

@@ -83,7 +83,7 @@ export function resistanceResult(d8: number, d6?: number): number {
 
 const w = (leve: number, medio: number, letal: number): Wounds => ({ leve, medio, letal })
 
-const WOUND_TABLE: readonly {
+export const WOUND_TABLE: readonly {
   min: number
   max: number
   cells: Record<WoundCategory, Wounds>

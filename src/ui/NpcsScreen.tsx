@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { newNpcTemplate } from '../rules'
+import { defaultEnemyProfile, newNpcTemplate } from '../rules'
+import type { NpcKind } from '../rules'
 import { npcRepo } from './data'
 
 interface Props {
@@ -9,20 +10,49 @@ interface Props {
   onGoMore: () => void
 }
 
+const KIND_LABELS: Record<NpcKind, { tab: string; title: string; create: string; empty: string }> = {
+  npc: { tab: 'NPCs', title: 'NPCs', create: 'Nuevo NPC', empty: 'Todavía no hay NPCs.' },
+  bestia: { tab: 'Bestiario', title: 'Bestiario', create: 'Nueva bestia', empty: 'Todavía no hay bestias.' },
+}
+
 export function NpcsScreen({ onOpen, onCreated, onGoMore }: Props) {
+  const [kind, setKind] = useState<NpcKind>('npc')
   const [query, setQuery] = useState('')
-  const npcs = useLiveQuery(() => npcRepo.list(query), [query])
-  const total = useLiveQuery(() => npcRepo.list().then((all) => all.length), [])
+  const npcs = useLiveQuery(() => npcRepo.list(query, kind), [query, kind])
+  const total = useLiveQuery(() => npcRepo.list('', kind).then((all) => all.length), [kind])
+  const labels = KIND_LABELS[kind]
 
   if (npcs === undefined) return <p className="muted">Cargando…</p>
 
+  async function create() {
+    const data = newNpcTemplate(kind)
+    // Las bestias nacen con perfil de combate: para eso se usan.
+    const npc = await npcRepo.create(kind === 'bestia' ? { ...data, combat: defaultEnemyProfile('E') } : data)
+    onCreated(npc.id)
+  }
+
   return (
     <section>
-      <h1>NPCs</h1>
+      <h1>{labels.title}</h1>
+
+      <div className="seg" role="group" aria-label="Lista">
+        {(['npc', 'bestia'] as const).map((k) => (
+          <button
+            key={k}
+            className={k === kind ? 'tab active' : 'tab'}
+            onClick={() => {
+              setKind(k)
+              setQuery('')
+            }}
+          >
+            {KIND_LABELS[k].tab}
+          </button>
+        ))}
+      </div>
 
       {total === 0 ? (
         <div className="card">
-          <p>Todavía no hay NPCs.</p>
+          <p>{labels.empty}</p>
           <p className="muted">Importa tu respaldo o crea uno nuevo.</p>
           <button className="btn" onClick={onGoMore}>
             Ir a importar
@@ -55,7 +85,9 @@ export function NpcsScreen({ onOpen, onCreated, onGoMore }: Props) {
                       {n.combat ? ' · con perfil de combate' : ''}
                     </span>
                   </span>
-                  {n.rank && n.rank !== '-' && <span className="chip">{n.rank}</span>}
+                  {(n.combat?.rank || (n.rank && n.rank !== '-')) && (
+                    <span className="chip">{n.rank && n.rank !== '-' ? n.rank : n.combat?.rank}</span>
+                  )}
                 </button>
               </li>
             ))}
@@ -64,11 +96,8 @@ export function NpcsScreen({ onOpen, onCreated, onGoMore }: Props) {
       )}
 
       <div className="actions">
-        <button
-          className="btn secondary"
-          onClick={async () => onCreated((await npcRepo.create(newNpcTemplate())).id)}
-        >
-          Nuevo NPC
+        <button className="btn secondary" onClick={() => void create()}>
+          {labels.create}
         </button>
       </div>
     </section>

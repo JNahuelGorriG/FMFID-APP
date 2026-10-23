@@ -24,9 +24,10 @@ import type {
   Participant,
   PcState,
 } from '../rules'
-import { clampSaturation, SATURATION_PER_WOUND } from '../rules'
 import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
+import { clampSaturation } from '../rules'
+import { SaturationCard } from './SaturationCard'
 import { NumberField, SelectField, Stepper } from './fields'
 import { STAT_LABELS, describeDuration, fmt } from './format'
 
@@ -236,38 +237,11 @@ function PcPanel({
         {state.health.letal === 0 && <p className="errors">Sin heridas letales: estado crítico.</p>}
       </div>
 
-      <div className="card">
-        <h2>Saturación por curación</h2>
-        <div
-          className="bar"
-          role="progressbar"
-          aria-label="Saturación"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={saturation}
-        >
-          <div className="bar-fill" style={{ width: `${saturation}%` }} />
-        </div>
-        <Stepper
-          label="Saturación (%)"
-          value={saturation}
-          min={0}
-          max={100}
-          onChange={(v) => void update((s) => ({ ...s, saturation: clampSaturation(v) }))}
-        />
-        <div className="actions">
-          {(['leve', 'medio', 'letal'] as const).map((k) => (
-            <button
-              key={k}
-              className="btn secondary compact"
-              onClick={() => void update((s) => ({ ...s, saturation: clampSaturation((s.saturation ?? 0) + SATURATION_PER_WOUND[k]) }))}
-            >
-              Curó 1 {k} (+{SATURATION_PER_WOUND[k]} %)
-            </button>
-          ))}
-        </div>
-        <p className="muted small">No suma sola: la llevas tú cuando el jugador se cura.</p>
-      </div>
+      <SaturationCard
+        value={saturation}
+        onSet={(v) => void update((s) => ({ ...s, saturation: clampSaturation(v) }))}
+        onAdd={(d) => void update((s) => ({ ...s, saturation: clampSaturation((s.saturation ?? 0) + d) }))}
+      />
 
       <div className="card">
         <h2>Armadura</h2>
@@ -540,6 +514,12 @@ function NpcPanel({
         </div>
         {npc.hpCurrent === 0 && <p className="errors">Sin vida.</p>}
       </div>
+
+      <SaturationCard
+        value={npc.saturation ?? 0}
+        onSet={(v) => void update((n) => ({ ...n, saturation: clampSaturation(v) }))}
+        onAdd={(d) => void update((n) => ({ ...n, saturation: clampSaturation((n.saturation ?? 0) + d) }))}
+      />
 
       <div className="card">
         <h2>Barreras (puntos)</h2>

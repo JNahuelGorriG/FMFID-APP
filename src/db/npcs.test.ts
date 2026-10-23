@@ -75,3 +75,23 @@ describe('búsqueda por rango', () => {
     expect((await repo.list('al')).map((n) => n.name)).toEqual(['Alice', 'Zoe'])
   })
 })
+
+describe('bestiario', () => {
+  it('separa a los NPC únicos de las bestias, y la búsqueda respeta la separación', async () => {
+    await repo.create({ ...newNpcTemplate('npc'), name: 'Alice', rank: 'SS+' })
+    await repo.create({ ...newNpcTemplate('bestia'), name: 'Lobo', rank: 'D' })
+    await repo.create({ ...newNpcTemplate('bestia'), name: 'Lobo alfa', rank: 'B' })
+    expect((await repo.list('', 'npc')).map((n) => n.name)).toEqual(['Alice'])
+    expect((await repo.list('', 'bestia')).map((n) => n.name)).toEqual(['Lobo', 'Lobo alfa'])
+    expect((await repo.list('lobo', 'bestia')).map((n) => n.name)).toEqual(['Lobo', 'Lobo alfa'])
+    expect((await repo.list('b', 'bestia')).map((n) => n.name)).toEqual(['Lobo alfa'])
+    expect(await repo.list('d', 'npc')).toEqual([])
+    expect(await repo.list('')).toHaveLength(3)
+  })
+
+  it('un respaldo viejo sin tipo trae a todos como NPC', async () => {
+    const { kind: _k, ...old } = { ...newNpcTemplate(), id: 'n1', name: 'Vieja', createdAt: '', updatedAt: '' }
+    await importBackup(db, { app: 'fmfid-app', version: 5, exportedAt: '', characters: [], changes: [], npcs: [old] })
+    expect((await repo.list('', 'npc')).map((n) => n.name)).toEqual(['Vieja'])
+  })
+})

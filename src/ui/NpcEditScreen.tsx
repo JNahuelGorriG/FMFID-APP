@@ -7,7 +7,7 @@ import {
   enemySheet,
   suggestedCombatRank,
 } from '../rules'
-import type { ArmorType, EnemyProfile, Npc, StatName, Tier, WeaponSize } from '../rules'
+import type { ArmorType, EnemyProfile, Npc, NpcKind, StatName, Tier, WeaponSize } from '../rules'
 import { CheckField, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from './fields'
 import { npcRepo } from './data'
 import { STAT_LABELS, fmt } from './format'
@@ -79,6 +79,15 @@ function NpcForm({
       <div className="card">
         <h2>Datos</h2>
         <TextField label="Nombre" value={draft.name} onChange={(v) => set('name', v)} />
+        <SelectField
+          label="Tipo"
+          value={draft.kind ?? 'npc'}
+          options={[
+            { value: 'npc' as NpcKind, label: 'NPC' },
+            { value: 'bestia' as NpcKind, label: 'Bestia (bestiario)' },
+          ]}
+          onChange={(v) => set('kind', v)}
+        />
         <div className="grid-2">
           <TextField label="Rol" value={draft.role} onChange={(v) => set('role', v)} />
           <TextField label="Rango" value={draft.rank} onChange={(v) => set('rank', v)} />

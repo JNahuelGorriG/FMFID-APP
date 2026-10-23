@@ -21,7 +21,7 @@ import {
 import type { AttackType, Combat, Profile, StatName } from '../../rules'
 import { combatRepo } from '../data'
 import { NumberField, OptionalNumberField, SelectField } from '../fields'
-import { LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, woundsText } from '../format'
+import { GROUP_LABELS, LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, withRank, woundsText } from '../format'
 
 const STAT_OPTIONS = STAT_NAMES.map((s) => ({ value: s, label: STAT_LABELS[s] }))
 const TYPE_OPTIONS: { value: AttackType; label: string }[] = [
@@ -152,7 +152,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           <SelectField
             label="Atacante"
             value={attacker.participantId}
-            options={profiles.map((p) => ({ value: p.participantId, label: p.name }))}
+            options={profiles.map((p) => ({ value: p.participantId, label: withRank(p.name, p.rankName) }))}
             onChange={(id) => {
               setAttackerId(id)
               reset()
@@ -163,7 +163,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
             value={defender.participantId}
             options={profiles
               .filter((p) => p.participantId !== attacker.participantId)
-              .map((p) => ({ value: p.participantId, label: p.name }))}
+              .map((p) => ({ value: p.participantId, label: withRank(p.name, p.rankName) }))}
             onChange={(id) => {
               setDefenderId(id)
               reset()
@@ -171,6 +171,19 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           />
           <SelectField label="Tipo de ataque" value={type} options={TYPE_OPTIONS} onChange={chooseType} />
           <span />
+          <button
+            className="btn secondary compact swap"
+            onClick={() => {
+              const a = attackerStat
+              setAttackerStat(defenderStat)
+              setDefenderStat(a)
+              setAttackerId(defender.participantId)
+              setDefenderId(attacker.participantId)
+              reset()
+            }}
+          >
+            ⇅ Intercambiar roles
+          </button>
           <SelectField label="Stat del atacante" value={attackerStat} options={STAT_OPTIONS} onChange={setAttackerStat} />
           <SelectField label="Stat del defensor" value={defenderStat} options={STAT_OPTIONS} onChange={setDefenderStat} />
         </div>
@@ -185,6 +198,10 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
         <p className="small">
           Diferencia {check.difference >= 0 ? '+' : ''}
           {fmt(check.difference)}
+        </p>
+        <p className="muted small">
+          La escala es la del defensor: {defender.name} ({defender.rankName ?? 'sin rango'}, grupo{' '}
+          {GROUP_LABELS[defender.group]}). Si intercambias los roles, cambia el defensor y con él la escala.
         </p>
         <p className="small">
           Si tira el atacante: <strong>{LEVEL_LABELS[check.level]}</strong> · Si tira el defensor:{' '}

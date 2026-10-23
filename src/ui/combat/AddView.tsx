@@ -1,27 +1,36 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { addNpcParticipant, addPcParticipant } from '../../rules'
-import type { Combat } from '../../rules'
+import { RANKS, addNpcParticipant, addPcParticipant } from '../../rules'
+import type { Combat, NpcKind } from '../../rules'
 import { combatRepo, npcRepo, repo } from '../data'
 import { NumberField, OptionalNumberField, SelectField, TextField } from '../fields'
 
+const RANK_OPTIONS = RANKS.map((r) => ({ value: r.name, label: r.name }))
+const MAX_RESULTS = 40
+
 export function AddView({ combat }: { combat: Combat }) {
   const characters = useLiveQuery(() => repo.list(), [])
-  const npcs = useLiveQuery(() => npcRepo.list(), [])
   const taken = new Set(combat.participants.map((p) => p.characterId).filter(Boolean) as string[])
   const available = (characters ?? []).filter((c) => !taken.has(c.id))
-  const withProfile = (npcs ?? []).filter((n) => n.combat !== null)
 
   const [pcId, setPcId] = useState('')
   const [pcInit, setPcInit] = useState<number | undefined>(undefined)
+  const pcChoice = available.find((c) => c.id === pcId) ?? available[0]
+
+  const [kind, setKind] = useState<NpcKind>('bestia')
+  const [query, setQuery] = useState('')
   const [npcId, setNpcId] = useState('')
+  const [rank, setRank] = useState<string | null>(null)
   const [npcName, setNpcName] = useState('')
   const [npcInit, setNpcInit] = useState<number | undefined>(undefined)
   const [qty, setQty] = useState(1)
   const [side, setSide] = useState<'enemigo' | 'aliado'>('enemigo')
 
-  const pcChoice = available.find((c) => c.id === pcId) ?? available[0]
-  const npcChoice = withProfile.find((n) => n.id === npcId) ?? withProfile[0]
+  const found = useLiveQuery(() => npcRepo.list(query, kind), [query, kind])
+  const results = (found ?? []).filter((n) => n.combat !== null)
+  const shown = results.slice(0, MAX_RESULTS)
+  const npcChoice = results.find((n) => n.id === npcId)
+  const rankChoice = rank ?? npcChoice?.combat?.rank ?? 'E'
 
   return (
     <>
@@ -49,16 +58,65 @@ export function AddView({ combat }: { combat: Combat }) {
       </div>
 
       <div className="card">
-        <h2>NPC</h2>
-        {withProfile.length > 0 ? (
+        <h2>NPC o bestia</h2>
+        <div className="seg" role="group" aria-label="Lista">
+          {(['bestia', 'npc'] as const).map((k) => (
+            <button
+              key={k}
+              className={k === kind ? 'tab active' : 'tab'}
+              onClick={() => {
+                setKind(k)
+                setNpcId('')
+                setRank(null)
+              }}
+            >
+              {k === 'bestia' ? 'Bestiario' : 'NPCs'}
+            </button>
+          ))}
+        </div>
+        <TextField
+          label="Buscar"
+          value={query}
+          onChange={setQuery}
+          placeholder="Nombre, familia o rango exacto (B+)"
+        />
+        {shown.length === 0 ? (
+          <p className="muted small">Ninguno con perfil de combate coincide.</p>
+        ) : (
+          <div className="picker" role="listbox" aria-label="Resultados">
+            {shown.map((n) => (
+              <button
+                key={n.id}
+                role="option"
+                aria-selected={n.id === npcChoice?.id}
+                className={n.id === npcChoice?.id ? 'selected' : ''}
+                onClick={() => {
+                  setNpcId(n.id)
+                  setRank(null)
+                }}
+              >
+                <span>{n.name}</span>
+                <span className="muted small">{n.combat?.rank}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {results.length > shown.length && (
+          <p className="muted small">Mostrando {shown.length} de {results.length}. Afina la búsqueda.</p>
+        )}
+
+        {npcChoice && (
           <>
+            <p className="small">
+              Elegido: <strong>{npcChoice.name}</strong>
+            </p>
             <SelectField
-              label="NPC con perfil de combate"
-              value={npcChoice?.id ?? ''}
-              options={withProfile.map((n) => ({ value: n.id, label: n.name }))}
-              onChange={setNpcId}
+              label="Rango en este combate"
+              value={rankChoice}
+              options={RANK_OPTIONS}
+              onChange={setRank}
             />
-            <TextField label="Nombre en el combate" value={npcName} onChange={setNpcName} placeholder={npcChoice?.name} />
+            <TextField label="Nombre en el combate" value={npcName} onChange={setNpcName} placeholder={npcChoice.name} />
             <div className="grid-2">
               <NumberField label="Cantidad" integer value={qty} onChange={(v) => setQty(Math.max(1, v))} />
               <OptionalNumberField label="Iniciativa del NPC" value={npcInit} onChange={setNpcInit} />
@@ -75,9 +133,9 @@ export function AddView({ combat }: { combat: Combat }) {
             <button
               className="btn secondary"
               onClick={() => {
-                if (!npcChoice?.combat) return
+                if (!npcChoice.combat) return
                 const base = npcName.trim() || npcChoice.name
-                const profile = npcChoice.combat
+                const profile = { ...npcChoice.combat, rank: rankChoice }
                 void combatRepo.update(combat.id, (c) => {
                   let next = c
                   for (let i = 1; i <= qty; i++) {
@@ -87,11 +145,9 @@ export function AddView({ combat }: { combat: Combat }) {
                 })
               }}
             >
-              Agregar NPC
+              Agregar al combate
             </button>
           </>
-        ) : (
-          <p className="muted small">Ningún NPC tiene perfil de combate todavía.</p>
         )}
       </div>
     </>

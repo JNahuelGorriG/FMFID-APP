@@ -1,5 +1,5 @@
 import type { AppDB } from './db'
-import type { NewNpc, Npc } from '../rules'
+import type { NewNpc, Npc, NpcKind } from '../rules'
 
 /** Un rango escrito solo: E, D+, B, A+, S, SS, SSS+... */
 const RANK_QUERY = /^(e|d|c|b|a|s|ss|sss)\+?$/
@@ -19,10 +19,12 @@ export function createNpcRepository(db: AppDB) {
 
     /**
      * Lista ordenada por nombre. Con `query`, filtra por nombre, rol, reino, gremio, raza u ocupación.
-     * Si lo escrito es un rango (A, B+, SS...), muestra solo los NPC de ese rango exacto.
+     * Si lo escrito es un rango (A, B+, SS...), muestra solo los de ese rango exacto. `kind` separa
+     * los NPC únicos de las bestias del bestiario.
      */
-    async list(query = ''): Promise<Npc[]> {
-      const all = (await db.npcs.toArray()).sort((a, b) => a.name.localeCompare(b.name))
+    async list(query = '', kind?: NpcKind): Promise<Npc[]> {
+      const everything = (await db.npcs.toArray()).sort((a, b) => a.name.localeCompare(b.name))
+      const all = kind ? everything.filter((n) => (n.kind ?? 'npc') === kind) : everything
       const q = query.trim().toLowerCase()
       if (q === '') return all
       if (RANK_QUERY.test(q)) return all.filter((n) => n.rank.trim().toLowerCase() === q)

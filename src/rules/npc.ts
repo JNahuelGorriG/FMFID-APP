@@ -1,9 +1,13 @@
 import { isRankName } from './enemy'
 import type { EnemyProfile } from './enemy'
 
+/** NPC único de la historia o bestia del bestiario (monstruos sin tanta relevancia). */
+export type NpcKind = 'npc' | 'bestia'
+
 /** NPC de la mesa: datos descriptivos y, opcionalmente, un perfil de combate. */
 export interface Npc {
   id: string
+  kind: NpcKind
   name: string
   role: string
   /** Rango tal como se anota en la lista (puede ser "-" o texto libre). */
@@ -24,9 +28,10 @@ export interface Npc {
 
 export type NewNpc = Omit<Npc, 'id' | 'createdAt' | 'updatedAt'>
 
-export function newNpcTemplate(): NewNpc {
+export function newNpcTemplate(kind: NpcKind = 'npc'): NewNpc {
   return {
-    name: 'Nuevo NPC', role: '', rank: '', element: '', guild: '', realm: '', race: '',
+    kind,
+    name: kind === 'bestia' ? 'Nueva bestia' : 'Nuevo NPC', role: '', rank: '', element: '', guild: '', realm: '', race: '',
     affiliation: '', occupation: '', personality: '', details: '', combat: null,
   }
 }

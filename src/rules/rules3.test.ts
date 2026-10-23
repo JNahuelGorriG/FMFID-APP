@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  defaultEnemyProfile,
   RANKS,
   categoryBonus,
   characterSheet,
@@ -8,6 +9,7 @@ import {
   tierMultipliers,
 } from './index'
 import { edward } from './fixtures'
+import { TRAINING_TABLE, initialNpcState } from './index'
 import type { Tiers } from './index'
 
 describe('hoja de personaje', () => {
@@ -96,5 +98,17 @@ describe('"rango F" para armas', () => {
   it('sin bajar de E, usa la tabla normal', () => {
     expect(referenceWeaponBonus(e, { kind: 'mediana', rankSteps: 0 })).toBe(15)
     expect(referenceWeaponBonus(RANKS[1], { kind: 'mediana', rankSteps: -1 })).toBe(15)
+  })
+})
+
+describe('tablas de la mesa', () => {
+  it('entrenamiento por despertares', () => {
+    expect(TRAINING_TABLE).toHaveLength(8)
+    expect(TRAINING_TABLE[0]).toEqual({ awakenings: 0, permanent: 15, temporary: 15 })
+    expect(TRAINING_TABLE[7]).toEqual({ awakenings: 7, permanent: 120, temporary: 120 })
+  })
+
+  it('un NPC entra al combate con la saturación en 0', () => {
+    expect(initialNpcState(defaultEnemyProfile('D')).saturation).toBe(0)
   })
 })

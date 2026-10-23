@@ -174,3 +174,18 @@ export function woundsText(w: { leve: number; medio: number; letal: number }): s
   if (w.leve) parts.push(`${w.leve} leve${w.leve > 1 ? 's' : ''}`)
   return parts.join(' + ') || 'Sin daño'
 }
+
+import type { RankGroup } from '../rules'
+
+export const GROUP_LABELS: Record<RankGroup, string> = {
+  bajo: 'Bajo',
+  medio: 'Medio',
+  alto: 'Alto',
+  especial: 'Especial',
+  divino: 'Divino',
+}
+
+/** Nombre con su rango entre paréntesis, para distinguir a un mismo monstruo de distinto rango. */
+export function withRank(name: string, rank: string | null | undefined): string {
+  return rank ? `${name} (${rank})` : name
+}

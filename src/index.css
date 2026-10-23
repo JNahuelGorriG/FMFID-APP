@@ -223,3 +223,13 @@ details[open] > summary { margin-bottom: 8px; }
 
 .bar { height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-bottom: 8px; }
 .bar-fill { height: 100%; background: var(--accent); transition: width 0.2s ease; }
+
+.swap { align-self: end; margin-bottom: 8px; }
+.picker { max-height: 14rem; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; margin: 6px 0 10px; }
+.picker button { display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 9px 12px; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; }
+.picker button:last-child { border-bottom: 0; }
+.picker button.selected { background: var(--bg); color: var(--accent-soft); font-weight: 600; }
+.seg { display: flex; gap: 6px; margin-bottom: 10px; }
+
+.cmp.ref td.first { text-align: left; color: var(--accent-soft); font-weight: 600; }
+.cmp.ref th { white-space: normal; }

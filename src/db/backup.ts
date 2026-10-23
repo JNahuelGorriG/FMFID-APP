@@ -1,9 +1,9 @@
 import type { AppDB, ChangeRecord, Setting } from './db'
-import { migrateCombat, normalizeCombat } from './migrations'
+import { migrateCombat, normalizeCombat, normalizeNpc } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
 import type { Character, Combat, Npc } from '../rules'
 
-export const BACKUP_VERSION = 5
+export const BACKUP_VERSION = 6
 
 export interface BackupFile {
   app: 'fmfid-app'
@@ -72,7 +72,7 @@ export async function importBackup(db: AppDB, data: unknown): Promise<void> {
     ])
     await db.characters.bulkAdd(data.characters)
     await db.changes.bulkAdd(data.changes)
-    await db.npcs.bulkAdd(data.npcs ?? [])
+    await db.npcs.bulkAdd((data.npcs ?? []).map(normalizeNpc))
     await db.combats.bulkAdd(combats)
     await db.settings.bulkAdd(data.settings ?? [])
   })

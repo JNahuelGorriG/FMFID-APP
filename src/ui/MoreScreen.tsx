@@ -74,7 +74,7 @@ function EffectTypesEditor() {
   )
 }
 
-export function MoreScreen() {
+export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
 
@@ -106,6 +106,16 @@ export function MoreScreen() {
   return (
     <section>
       <h1>Más</h1>
+
+      <div className="card">
+        <h2>Tablas de la mesa</h2>
+        <p className="muted small">
+          Éxitos, daños, rangos, equipo, entrenamiento, precios y la comparativa entre jugadores.
+        </p>
+        <button className="btn" onClick={onOpenTables}>
+          Ver tablas
+        </button>
+      </div>
 
       <div className="card">
         <h2>Respaldo</h2>

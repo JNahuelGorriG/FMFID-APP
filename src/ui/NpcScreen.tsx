@@ -37,6 +37,7 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
         <div className="grow">
           <h1 className="tight">{npc.name}</h1>
         </div>
+        {npc.kind === 'bestia' && <span className="chip off">Bestia</span>}
         {npc.rank && npc.rank !== '-' && <span className="chip">{npc.rank}</span>}
         <button className="btn secondary compact" onClick={onEdit}>
           Editar

@@ -79,7 +79,7 @@ const u = (total: number, fuerte: number, letal: number): ArmorUses => ({
 })
 
 /** Usos de las armaduras. Solo existen del rango E al S. */
-const ARMOR_USES: Record<ArmorType, Record<ArmorUsesRank, ArmorUses>> = {
+export const ARMOR_USES: Record<ArmorType, Record<ArmorUsesRank, ArmorUses>> = {
   ligera: { S: u(19, 10, 6), A: u(16, 8, 5), B: u(13, 7, 4), C: u(10, 5, 3), D: u(7, 4, 2), E: u(4, 2, 1) },
   mediana: { S: u(26, 13, 9), A: u(22, 11, 7), B: u(18, 9, 6), C: u(14, 7, 5), D: u(10, 5, 3), E: u(6, 3, 2) },
   pesada: { S: u(33, 17, 11), A: u(28, 14, 9), B: u(23, 12, 8), C: u(18, 9, 6), D: u(13, 7, 4), E: u(8, 4, 3) },

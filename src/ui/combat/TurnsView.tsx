@@ -126,6 +126,7 @@ function ParticipantCard({
   } else if (participant.npc) {
     summary = `Vida ${participant.npc.hpCurrent} / ${participant.npc.hpMax}`
     if (participant.npc.barriers.length > 0) summary += ` · ${participant.npc.barriers.length} barrera(s)`
+    if ((participant.npc.saturation ?? 0) > 0) summary += ` · Saturación ${participant.npc.saturation} %`
   }
   const effects = participant.pc?.effects ?? participant.npc?.effects ?? []
 
@@ -134,6 +135,7 @@ function ParticipantCard({
       <div className="row">
         <button className="link-btn grow" onClick={onOpen}>
           <span className="name">{participant.name}</span>
+          {participant.npc && <span className="muted small"> · {participant.npc.profile.rank}</span>}
           {active && <span className="chip">Su turno</span>}
           <span className="muted small block">
             {SIDE_LABELS[participant.side]} · {summary}

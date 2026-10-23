@@ -228,6 +228,24 @@ interface ExcelCheck {
   stamina: number
 }
 
+/** Lee una hoja entera como tabla de texto, para consultarla en la app. */
+function readSheetGrid(workbook: ExcelJS.Workbook, name: string): string[][] {
+  const ws = workbook.getWorksheet(name)
+  if (!ws) return []
+  const rows: string[][] = []
+  for (let r = 1; r <= ws.rowCount; r++) {
+    const row: string[] = []
+    for (let c = 1; c <= ws.columnCount; c++) {
+      const v = valueOf(ws.getCell(r, c).value)
+      row.push(v === null || v === undefined ? '' : String(v).trim())
+    }
+    while (row.length > 0 && row[row.length - 1] === '') row.pop()
+    rows.push(row)
+  }
+  while (rows.length > 0 && rows[rows.length - 1].length === 0) rows.pop()
+  return rows
+}
+
 /** Lee la hoja "Lista NPCs": datos descriptivos, sin perfil de combate. */
 function readNpcs(workbook: ExcelJS.Workbook): Npc[] {
   const ws = workbook.getWorksheet('Lista NPCs')
@@ -244,6 +262,7 @@ function readNpcs(workbook: ExcelJS.Workbook): Npc[] {
     if (name === '') continue
     npcs.push({
       id: crypto.randomUUID(),
+      kind: 'npc',
       name,
       role: text(r, 2),
       rank: text(r, 3),
@@ -314,7 +333,12 @@ async function main() {
     changes: [],
     npcs,
     combats: [],
-    settings: [],
+    settings: [
+      {
+        key: 'referenceSheets',
+        value: [{ id: 'precios', title: 'Precios', rows: readSheetGrid(workbook, 'Precios') }],
+      },
+    ],
   }
   writeFileSync(output, JSON.stringify(backup, null, 2), 'utf8')
   console.log(`\n${characters.length} personajes y ${npcs.length} NPCs escritos en ${output}. Diferencias encontradas: ${problems}.`)

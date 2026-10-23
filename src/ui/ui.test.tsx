@@ -176,13 +176,14 @@ describe('app', () => {
   /** Agrega a Edward (iniciativa 10) y a un Goblin enemigo (iniciativa 5). */
   async function setUpDuel() {
     await repo.create(edwardData)
-    await npcRepo.create({ ...newNpcTemplate(), name: 'Goblin', rank: 'C+', combat: defaultEnemyProfile('C+') })
+    await npcRepo.create({ ...newNpcTemplate('bestia'), name: 'Goblin', rank: 'C+', combat: defaultEnemyProfile('C+') })
     await openNewCombat()
     goTo('Agregar')
     fireEvent.change(await screen.findByLabelText('Iniciativa del jugador'), { target: { value: '10' } })
     fireEvent.click(await screen.findByText('Agregar jugador'))
-    fireEvent.change(screen.getByLabelText('Iniciativa del NPC'), { target: { value: '5' } })
-    fireEvent.click(screen.getByText('Agregar NPC'))
+    fireEvent.click(await screen.findByRole('option', { name: /Goblin/ }))
+    fireEvent.change(await screen.findByLabelText('Iniciativa del NPC'), { target: { value: '5' } })
+    fireEvent.click(screen.getByText('Agregar al combate'))
     await waitFor(async () => expect(await combatNames()).toEqual(['Edward', 'Goblin']))
   }
 
@@ -193,13 +194,14 @@ describe('app', () => {
 
   it('combate: crea un campo con nombre, arma el orden y avanza turnos y rondas', async () => {
     await repo.create(edwardData)
-    await npcRepo.create({ ...newNpcTemplate(), name: 'Goblin', rank: 'D', combat: defaultEnemyProfile('D') })
+    await npcRepo.create({ ...newNpcTemplate('bestia'), name: 'Goblin', rank: 'D', combat: defaultEnemyProfile('D') })
     await openNewCombat()
 
     goTo('Agregar')
     fireEvent.click(await screen.findByText('Agregar jugador'))
-    fireEvent.change(screen.getByLabelText('Cantidad'), { target: { value: '2' } })
-    fireEvent.click(screen.getByText('Agregar NPC'))
+    fireEvent.click(await screen.findByRole('option', { name: /Goblin/ }))
+    fireEvent.change(await screen.findByLabelText('Cantidad'), { target: { value: '2' } })
+    fireEvent.click(screen.getByText('Agregar al combate'))
     await waitFor(async () => expect(await combatNames()).toEqual(['Edward', 'Goblin 1', 'Goblin 2']))
 
     goTo('Turnos')
@@ -408,7 +410,7 @@ describe('app', () => {
     await waitFor(() => expect(screen.getByLabelText('Resultados del check').textContent).toContain('Resultado de Goblin'))
   })
 
-  it('participante: la barra de saturación sube con los atajos y se puede ajustar', async () => {
+  it('participante: la saturación se escribe a mano, sube con atajos y se resetea', async () => {
     await repo.create(edwardData)
     await openNewCombat()
     goTo('Agregar')
@@ -420,8 +422,30 @@ describe('app', () => {
     fireEvent.click(screen.getByText('Curó 1 letal (+9 %)'))
     await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('12'))
 
-    fireEvent.click(screen.getByLabelText('Saturación (%): menos'))
-    await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('11'))
+    fireEvent.change(screen.getByLabelText('Saturación (%)'), { target: { value: '40' } })
+    await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40'))
+
+    fireEvent.change(screen.getByLabelText('Saturación (%)'), { target: { value: '250' } }) // tope en 100
+    await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100'))
+
+    fireEvent.click(screen.getByText('Poner en 0'))
+    await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('0'))
+  })
+
+  it('participante: los NPC aliados y enemigos también tienen barra de saturación', async () => {
+    await setUpDuel()
+    goTo('Turnos')
+    const names = await waitFor(() => {
+      const els = Array.from(document.querySelectorAll('.participant .name'))
+      if (els.length < 2) throw new Error('faltan participantes')
+      return els
+    })
+    fireEvent.click(names[1]) // el Goblin
+    fireEvent.change(await screen.findByLabelText('Saturación (%)'), { target: { value: '25' } })
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.saturation).toBe(25)
+    })
   })
 
   it('participante: la armadura suma a un solo stat, editable', async () => {
@@ -455,5 +479,94 @@ describe('app', () => {
     fireEvent.change(screen.getByLabelText('Buscar NPC'), { target: { value: 'B+' } })
     await waitFor(() => expect(screen.getByText('Brix')).toBeTruthy())
     expect(screen.queryByText('Bela')).toBeNull()
+  })
+
+  it('ataque: intercambiar roles cambia el defensor y con él la escala', async () => {
+    await setUpDuel()
+    goTo('Ataque')
+    expect(await screen.findByText(/La escala es la del defensor: Goblin/)).toBeTruthy()
+    fireEvent.click(screen.getByText('⇅ Intercambiar roles'))
+    expect(await screen.findByText(/La escala es la del defensor: Edward/)).toBeTruthy()
+  })
+
+  it('agregar: se busca en el bestiario, se ve el rango y se puede cambiar para este combate', async () => {
+    await npcRepo.create({ ...newNpcTemplate('bestia'), name: 'Lobo', rank: 'D', combat: defaultEnemyProfile('D') })
+    await npcRepo.create({ ...newNpcTemplate('bestia'), name: 'Lobo alfa', rank: 'B', combat: defaultEnemyProfile('B') })
+    await npcRepo.create({ ...newNpcTemplate('npc'), name: 'Alice', rank: 'SS+', combat: defaultEnemyProfile('SS+') })
+    await openNewCombat()
+    goTo('Agregar')
+
+    // el bestiario es la lista por defecto: no aparece Alice, y cada uno muestra su rango
+    const list = await screen.findByRole('listbox', { name: 'Resultados' })
+    expect(within(list).getByText('Lobo')).toBeTruthy()
+    expect(within(list).getByText('B')).toBeTruthy()
+    expect(within(list).queryByText('Alice')).toBeNull()
+
+    // búsqueda por rango exacto
+    fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: 'B' } })
+    await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Resultados' })).queryByText('Lobo')).toBeNull())
+
+    // elegir al lobo D pero agregarlo como rango A
+    fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: 'lobo' } })
+    fireEvent.click(await screen.findByRole('option', { name: /^Lobo\s*D$/ }))
+    fireEvent.change(await screen.findByLabelText('Rango en este combate'), { target: { value: 'A' } })
+    fireEvent.click(screen.getByText('Agregar al combate'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].npc?.profile.rank).toBe('A')
+      expect(c.participants[0].name).toBe('Lobo')
+    })
+
+    // en la lista de NPCs sí está Alice
+    fireEvent.click(within(screen.getByRole('group', { name: 'Lista' })).getByText('NPCs'))
+    fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: '' } })
+    expect(await screen.findByRole('option', { name: /Alice/ })).toBeTruthy()
+  })
+
+  it('NPCs: el bestiario se separa de los NPCs únicos', async () => {
+    await npcRepo.create({ ...newNpcTemplate('npc'), name: 'Alice', rank: 'SS+' })
+    await npcRepo.create({ ...newNpcTemplate('bestia'), name: 'Lobo', rank: 'D' })
+    render(<App />)
+    fireEvent.click(screen.getByText('NPCs'))
+    expect(await screen.findByText('Alice')).toBeTruthy()
+    expect(screen.queryByText('Lobo')).toBeNull()
+
+    fireEvent.click(screen.getByText('Bestiario'))
+    expect(await screen.findByText('Lobo')).toBeTruthy()
+    expect(screen.queryByText('Alice')).toBeNull()
+
+    fireEvent.click(screen.getByText('Nueva bestia'))
+    expect(await screen.findByText('Editar NPC')).toBeTruthy()
+    const beasts = await npcRepo.list('', 'bestia')
+    expect(beasts.some((b) => b.name === 'Nueva bestia' && b.combat !== null)).toBe(true)
+  })
+
+  it('tablas: se consultan los rangos, éxitos, daños, equipo, jugadores y precios', async () => {
+    await repo.create(edwardData)
+    await db.settings.put({
+      key: 'referenceSheets',
+      value: [{ id: 'precios', title: 'Precios', rows: [['MISIONES', 'Mazmorra'], ['S+', '125000']] }],
+    })
+    render(<App />)
+    fireEvent.click(screen.getByText('Más'))
+    fireEvent.click(await screen.findByText('Ver tablas'))
+
+    expect((await screen.findByText('Promedio mínimo')) && true).toBe(true)
+    const pick = (value: string) => fireEvent.change(screen.getByLabelText('Tabla'), { target: { value } })
+
+    pick('danos')
+    expect(await screen.findByText('1 letal + 1 medio')).toBeTruthy()
+    pick('exitos')
+    expect(await screen.findByText('Éxito asegurado')).toBeTruthy()
+    pick('armaduras')
+    expect(await screen.findByText('Ligera')).toBeTruthy()
+    pick('entrenamiento')
+    expect(await screen.findByText('7')).toBeTruthy()
+    pick('jugadores')
+    const comparison = await screen.findByLabelText('Comparativa entre jugadores')
+    expect(comparison.textContent).toContain('Edward')
+    expect(comparison.textContent).toContain('357,1')
+    pick('precios')
+    expect(await screen.findByText('125.000')).toBeTruthy()
   })
 })

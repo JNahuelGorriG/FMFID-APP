@@ -44,3 +44,15 @@ export function tierMultipliers(
 export function categoryBonus(base: number, tier: Tier): number {
   return tier === 1 ? base : tier === 2 ? base / 2 : base / 4
 }
+
+/** Stats de entrenamiento según los despertares: lo máximo que se puede entrenar. */
+export const TRAINING_TABLE: readonly { awakenings: number; permanent: number; temporary: number }[] = [
+  { awakenings: 0, permanent: 15, temporary: 15 },
+  { awakenings: 1, permanent: 25, temporary: 25 },
+  { awakenings: 2, permanent: 35, temporary: 35 },
+  { awakenings: 3, permanent: 50, temporary: 50 },
+  { awakenings: 4, permanent: 65, temporary: 65 },
+  { awakenings: 5, permanent: 80, temporary: 80 },
+  { awakenings: 6, permanent: 100, temporary: 100 },
+  { awakenings: 7, permanent: 120, temporary: 120 },
+]
