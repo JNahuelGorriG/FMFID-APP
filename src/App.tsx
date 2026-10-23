@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { CharactersScreen } from './ui/CharactersScreen'
+import { CombatScreen } from './ui/CombatScreen'
+import { CombatsScreen } from './ui/CombatsScreen'
+import { ParticipantScreen } from './ui/ParticipantScreen'
 import { EditScreen } from './ui/EditScreen'
 import { MoreScreen } from './ui/MoreScreen'
 import { NpcEditScreen } from './ui/NpcEditScreen'
 import { NpcScreen } from './ui/NpcScreen'
 import { NpcsScreen } from './ui/NpcsScreen'
-import { Placeholder } from './ui/Placeholder'
 import { SheetScreen } from './ui/SheetScreen'
 
 type Tab = 'personajes' | 'combate' | 'npcs' | 'mas'
@@ -33,6 +35,8 @@ export default function App() {
   const [editing, setEditing] = useState(false)
   const [openNpcId, setOpenNpcId] = useState<string | null>(null)
   const [editingNpc, setEditingNpc] = useState(false)
+  const [openCombatId, setOpenCombatId] = useState<string | null>(null)
+  const [openParticipantId, setOpenParticipantId] = useState<string | null>(null)
   const [navOpen, setNavOpen] = useState(readNavPreference)
 
   function toggleNav() {
@@ -51,6 +55,8 @@ export default function App() {
     setEditing(false)
     setOpenNpcId(null)
     setEditingNpc(false)
+    setOpenCombatId(null)
+    setOpenParticipantId(null)
   }
 
   return (
@@ -78,7 +84,23 @@ export default function App() {
               onGoMore={() => goTo('mas')}
             />
           ))}
-        {tab === 'combate' && <Placeholder title="Combate" />}
+        {tab === 'combate' &&
+          (openCombatId && openParticipantId ? (
+            <ParticipantScreen
+              combatId={openCombatId}
+              participantId={openParticipantId}
+              onBack={() => setOpenParticipantId(null)}
+            />
+          ) : openCombatId ? (
+            <CombatScreen
+              id={openCombatId}
+              onBack={() => setOpenCombatId(null)}
+              onOpenParticipant={setOpenParticipantId}
+              onDeleted={() => setOpenCombatId(null)}
+            />
+          ) : (
+            <CombatsScreen onOpen={setOpenCombatId} />
+          ))}
         {tab === 'npcs' &&
           (openNpcId && editingNpc ? (
             <NpcEditScreen

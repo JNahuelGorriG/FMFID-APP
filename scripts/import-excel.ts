@@ -313,6 +313,9 @@ async function main() {
     characters,
     changes: [],
     npcs,
+    characterStates: [],
+    combats: [],
+    settings: [],
   }
   writeFileSync(output, JSON.stringify(backup, null, 2), 'utf8')
   console.log(`\n${characters.length} personajes y ${npcs.length} NPCs escritos en ${output}. Diferencias encontradas: ${problems}.`)

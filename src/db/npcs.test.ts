@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { AppDB, createNpcRepository, exportBackup, importBackup } from './index'
+import { AppDB, BACKUP_VERSION, createNpcRepository, exportBackup, importBackup } from './index'
 import { defaultEnemyProfile, newNpcTemplate } from '../rules'
 
 let db: AppDB
@@ -40,7 +40,7 @@ describe('respaldo con NPCs', () => {
   it('exporta e importa los NPCs', async () => {
     await repo.create({ ...newNpcTemplate(), name: 'Alice', combat: defaultEnemyProfile('SS+') })
     const backup = await exportBackup(db)
-    expect(backup.version).toBe(2)
+    expect(backup.version).toBe(BACKUP_VERSION)
 
     const other = new AppDB(`test-${crypto.randomUUID()}`)
     await importBackup(other, JSON.parse(JSON.stringify(backup)))

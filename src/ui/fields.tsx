@@ -158,3 +158,33 @@ export function TextAreaField({ label, value, onChange }: TextAreaFieldProps) {
     </label>
   )
 }
+
+interface StepperProps {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+}
+
+/** Contador con botones de menos y más. */
+export function Stepper({ label, value, onChange, min = 0, max }: StepperProps) {
+  const clamp = (n: number) => Math.max(min, max === undefined ? n : Math.min(max, n))
+  return (
+    <div className="stepper">
+      <span className="small muted">{label}</span>
+      <div className="stepper-row">
+        <button className="icon-btn" aria-label={`${label}: menos`} onClick={() => onChange(clamp(value - 1))}>
+          −
+        </button>
+        <strong aria-label={`${label}: valor`}>
+          {value}
+          {max !== undefined && <span className="muted small"> / {max}</span>}
+        </strong>
+        <button className="icon-btn" aria-label={`${label}: más`} onClick={() => onChange(clamp(value + 1))}>
+          +
+        </button>
+      </div>
+    </div>
+  )
+}

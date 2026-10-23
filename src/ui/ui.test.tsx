@@ -15,6 +15,8 @@ beforeEach(async () => {
   await db.characters.clear()
   await db.changes.clear()
   await db.npcs.clear()
+  await db.combats.clear()
+  await db.characterStates.clear()
 })
 afterEach(() => cleanup())
 
@@ -151,5 +153,104 @@ describe('app', () => {
     const saved = (await npcRepo.list())[0]
     expect(saved.combat?.rank).toBe('D')
     expect(saved.combat?.hp.max).toBe(30)
+  })
+
+  async function openNewCombat() {
+    render(<App />)
+    fireEvent.click(screen.getByText('Combate'))
+    fireEvent.change(await screen.findByLabelText('Nombre del nuevo combate'), { target: { value: 'Frente norte' } })
+    fireEvent.click(screen.getByText('Nuevo combate'))
+    await screen.findByRole('heading', { name: 'Frente norte' })
+  }
+
+  async function openFirstParticipant() {
+    const name = await waitFor(() => {
+      const el = document.querySelector('.participant .name')
+      if (!el) throw new Error('todavía no está el participante')
+      return el
+    })
+    fireEvent.click(name)
+  }
+
+  it('combate: crea un campo con nombre, arma el orden y avanza turnos y rondas', async () => {
+    await repo.create(edwardData)
+    await npcRepo.create({ ...newNpcTemplate(), name: 'Goblin', rank: 'D', combat: defaultEnemyProfile('D') })
+    await openNewCombat()
+
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    fireEvent.change(screen.getByLabelText('Cantidad'), { target: { value: '2' } })
+    fireEvent.click(screen.getByText('Agregar NPC'))
+    expect(await screen.findByText('Goblin 2')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Iniciativa de Edward'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Iniciativa de Goblin 1'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Iniciativa de Goblin 2'), { target: { value: '5' } })
+
+    await waitFor(() => {
+      const names = Array.from(document.querySelectorAll('.participant .name')).map((n) => n.textContent)
+      expect(names).toEqual(['Edward', 'Goblin 1', 'Goblin 2'])
+    })
+
+    fireEvent.click(screen.getByText('Empezar combate'))
+    expect(await screen.findByText('Empieza el combate. Turno de Edward.')).toBeTruthy()
+    expect(screen.getByText('Su turno')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Siguiente turno'))
+    fireEvent.click(await screen.findByText('Siguiente ronda'))
+    expect(await screen.findByText('Inicio de la ronda 2.')).toBeTruthy()
+    expect(screen.getByText('Ronda 2')).toBeTruthy()
+  })
+
+  it('combate: hay varios campos de batalla a la vez, cada uno con su nombre', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByText('Combate'))
+    for (const name of ['Frente norte', 'Aldea']) {
+      fireEvent.change(await screen.findByLabelText('Nombre del nuevo combate'), { target: { value: name } })
+      fireEvent.click(screen.getByText('Nuevo combate'))
+      await screen.findByRole('heading', { name })
+      fireEvent.click(screen.getByLabelText('Volver a los combates'))
+    }
+    expect(await screen.findByText('Frente norte')).toBeTruthy()
+    expect(screen.getByText('Aldea')).toBeTruthy()
+  })
+
+  it('participante: baja la vida y un buff cambia los valores', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    await openFirstParticipant()
+
+    fireEvent.click(await screen.findByLabelText('Leves: menos'))
+    await waitFor(() => expect(screen.getByLabelText('Leves: valor').textContent).toContain('9'))
+
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '100' } })
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    expect(await screen.findByText('Valores con efectos')).toBeTruthy()
+    expect(screen.getByText('357,1 → 457,1 (+100)')).toBeTruthy()
+  })
+
+  it('participante: al pasar el límite de 4 buffs pide elegir cuál sale', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    await openFirstParticipant()
+
+    const types = ['pasivo', 'pocion', 'estilo', 'estado']
+    for (const [i, typeId] of types.entries()) {
+      fireEvent.change(await screen.findByLabelText('Tipo'), { target: { value: typeId } })
+      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
+      fireEvent.click(screen.getByText('Agregar efecto'))
+      // esperar a que se guarde antes de agregar el siguiente
+      await waitFor(() => expect(screen.getAllByText('Activo')).toHaveLength(i + 1))
+    }
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'armamento' } })
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Ya hay 4 buffs activos')
+
+    // "Quitar" dentro del aviso reemplaza a uno
+    const quitar = screen.getAllByText('Quitar')[0]
+    fireEvent.click(quitar)
+    await waitFor(() => expect(screen.queryByText(/Ya hay 4 buffs/)).toBeNull())
+    expect(screen.getAllByText('Activo')).toHaveLength(4)
   })
 })

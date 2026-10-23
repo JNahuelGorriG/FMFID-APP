@@ -100,3 +100,34 @@ export function fmtValue(value: unknown): string {
   }
   return JSON.stringify(value)
 }
+
+import type { DurationUnit, Effect, EffectTarget } from '../rules'
+
+export const TARGET_LABELS: Record<EffectTarget, string> = {
+  ...STAT_LABELS,
+  ataque: 'Ataque',
+  magia: 'Magia',
+  defensaFisica: 'Defensa física',
+  defensaMagica: 'Defensa mágica',
+}
+
+export const DURATION_LABELS: Record<DurationUnit, string> = {
+  turnos: 'Turnos',
+  rondas: 'Rondas',
+  manual: 'Hasta curar',
+  habilidad: 'Hasta que termine la habilidad',
+}
+
+export function describeDuration(duration: Effect['duration']): string {
+  if (duration.unit === 'turnos') return `${duration.remaining} turno(s)`
+  if (duration.unit === 'rondas') return `${duration.remaining} ronda(s)`
+  return DURATION_LABELS[duration.unit]
+}
+
+export function describeAmount(effect: Pick<Effect, 'kind' | 'flat' | 'percent'>): string {
+  const sign = effect.kind === 'buff' ? '+' : '−'
+  const parts: string[] = []
+  if (effect.flat !== 0) parts.push(`${sign}${fmt(effect.flat)}`)
+  if (effect.percent !== 0) parts.push(`${sign}${fmt(effect.percent)} %`)
+  return parts.join(' y ') || '0'
+}

@@ -181,3 +181,21 @@ details[open] > summary { margin-bottom: 8px; }
 .npc-stat { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 .kv { display: grid; grid-template-columns: 7.5rem 1fr; gap: 8px; }
 .kv dd { text-align: left; }
+
+.stepper { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.stepper-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stepper-row strong { font-size: 1.2rem; }
+.participant.active { border-color: var(--accent); }
+.participant .row { align-items: flex-start; }
+.link-btn { background: none; border: 0; text-align: left; cursor: pointer; padding: 0; }
+.init { width: 6.5rem; }
+.alerts { border-color: var(--accent-soft); }
+.chip.off { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.tag { font-size: 0.72rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.tag.buff { color: var(--accent-soft); }
+.tag.debuff { color: var(--muted); }
+.effect-row { display: flex; align-items: center; gap: 8px; }
+.card.nested { margin-top: 10px; background: var(--bg); }
+.spaced { margin-top: 14px; }
+.kv-between { display: flex; justify-content: space-between; gap: 12px; }
+.kv-between dd { text-align: right; }
