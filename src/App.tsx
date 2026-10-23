@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { CharactersScreen } from './ui/CharactersScreen'
 import { EditScreen } from './ui/EditScreen'
 import { MoreScreen } from './ui/MoreScreen'
+import { NpcEditScreen } from './ui/NpcEditScreen'
+import { NpcScreen } from './ui/NpcScreen'
+import { NpcsScreen } from './ui/NpcsScreen'
 import { Placeholder } from './ui/Placeholder'
 import { SheetScreen } from './ui/SheetScreen'
 
@@ -28,6 +31,8 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('personajes')
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [openNpcId, setOpenNpcId] = useState<string | null>(null)
+  const [editingNpc, setEditingNpc] = useState(false)
   const [navOpen, setNavOpen] = useState(readNavPreference)
 
   function toggleNav() {
@@ -44,6 +49,8 @@ export default function App() {
     setTab(next)
     setOpenId(null)
     setEditing(false)
+    setOpenNpcId(null)
+    setEditingNpc(false)
   }
 
   return (
@@ -72,7 +79,28 @@ export default function App() {
             />
           ))}
         {tab === 'combate' && <Placeholder title="Combate" />}
-        {tab === 'npcs' && <Placeholder title="NPCs" />}
+        {tab === 'npcs' &&
+          (openNpcId && editingNpc ? (
+            <NpcEditScreen
+              id={openNpcId}
+              onDone={() => setEditingNpc(false)}
+              onDeleted={() => {
+                setEditingNpc(false)
+                setOpenNpcId(null)
+              }}
+            />
+          ) : openNpcId ? (
+            <NpcScreen id={openNpcId} onBack={() => setOpenNpcId(null)} onEdit={() => setEditingNpc(true)} />
+          ) : (
+            <NpcsScreen
+              onOpen={setOpenNpcId}
+              onCreated={(id) => {
+                setOpenNpcId(id)
+                setEditingNpc(true)
+              }}
+              onGoMore={() => goTo('mas')}
+            />
+          ))}
         {tab === 'mas' && <MoreScreen />}
       </main>
 

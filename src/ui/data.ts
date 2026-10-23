@@ -1,4 +1,5 @@
-import { createRepository, db } from '../db'
+import { createNpcRepository, createRepository, db } from '../db'
 
-/** Repositorio único de la app. */
+/** Repositorios únicos de la app. */
 export const repo = createRepository(db)
+export const npcRepo = createNpcRepository(db)

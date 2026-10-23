@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from '../App'
 import { db } from '../db'
 import { edward } from '../rules/fixtures'
-import { repo } from './data'
+import { npcRepo, repo } from './data'
+import { defaultEnemyProfile, newNpcTemplate } from '../rules'
 
 const { id: _id, createdAt: _c, updatedAt: _u, ...edwardData } = edward
 
@@ -13,6 +14,7 @@ beforeEach(async () => {
   localStorage.clear()
   await db.characters.clear()
   await db.changes.clear()
+  await db.npcs.clear()
 })
 afterEach(() => cleanup())
 
@@ -113,5 +115,41 @@ describe('app', () => {
     fireEvent.click(await screen.findByText('Editar'))
     fireEvent.click(await screen.findByText('Cancelar'))
     expect(await screen.findByLabelText('Stats')).toBeTruthy()
+  })
+
+  it('NPCs: lista, busca y abre un NPC con perfil de combate', async () => {
+    await npcRepo.create({ ...newNpcTemplate(), name: 'Amber', rank: 'C+', realm: 'Aventurero', combat: defaultEnemyProfile('C+') })
+    await npcRepo.create({ ...newNpcTemplate(), name: 'Aino', rank: 'D', realm: 'Olderion' })
+    render(<App />)
+    fireEvent.click(screen.getByText('NPCs'))
+    expect(await screen.findByText('Amber')).toBeTruthy()
+    expect(screen.getByText('Aino')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Buscar NPC'), { target: { value: 'olderion' } })
+    await waitFor(() => expect(screen.queryByText('Amber')).toBeNull())
+    fireEvent.change(screen.getByLabelText('Buscar NPC'), { target: { value: '' } })
+
+    fireEvent.click(await screen.findByText('Amber'))
+    const stats = await screen.findByLabelText('Stats del NPC')
+    expect(stats.textContent).toContain('350')
+    expect(screen.getByText('980 · 1.430')).toBeTruthy()
+  })
+
+  it('NPCs: crea el perfil de combate y lo edita a mano', async () => {
+    await npcRepo.create({ ...newNpcTemplate(), name: 'Aino', rank: 'D' })
+    render(<App />)
+    fireEvent.click(screen.getByText('NPCs'))
+    fireEvent.click(await screen.findByText('Aino'))
+    fireEvent.click(await screen.findByText('Crear perfil de combate'))
+    fireEvent.change(await screen.findByLabelText('Fuerza · Valor a mano'), { target: { value: '500' } })
+    fireEvent.change(screen.getByLabelText('Vida máxima'), { target: { value: '30' } })
+    fireEvent.click(screen.getByText('Guardar cambios'))
+
+    const stats = await screen.findByLabelText('Stats del NPC')
+    expect(stats.textContent).toContain('500')
+    expect(stats.textContent).toContain('a mano')
+    const saved = (await npcRepo.list())[0]
+    expect(saved.combat?.rank).toBe('D')
+    expect(saved.combat?.hp.max).toBe(30)
   })
 })

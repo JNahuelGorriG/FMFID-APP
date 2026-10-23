@@ -13,7 +13,7 @@ import { writeFileSync } from 'node:fs'
 import { BACKUP_VERSION } from '../src/db/backup'
 import type { BackupFile } from '../src/db/backup'
 import { STAT_NAMES, characterSheet } from '../src/rules'
-import type { Character, DerivedConfig, Health, StatName, StatSources, Tier, Tiers } from '../src/rules'
+import type { Character, DerivedConfig, Health, Npc, StatName, StatSources, Tier, Tiers } from '../src/rules'
 
 const SOURCE_KEYS: (keyof StatSources)[] = [
   'puntosIniciales', 'arbolHeroe', 'heroe', 'categoria',
@@ -228,6 +228,41 @@ interface ExcelCheck {
   stamina: number
 }
 
+/** Lee la hoja "Lista NPCs": datos descriptivos, sin perfil de combate. */
+function readNpcs(workbook: ExcelJS.Workbook): Npc[] {
+  const ws = workbook.getWorksheet('Lista NPCs')
+  if (!ws) return []
+  const text = (row: number, col: number): string => {
+    const v = valueOf(ws.getCell(row, col).value)
+    const s = v === null || v === undefined ? '' : String(v).trim()
+    return s === '-' ? '' : s
+  }
+  const npcs: Npc[] = []
+  const stamp = new Date().toISOString()
+  for (let r = 2; r <= ws.rowCount; r++) {
+    const name = text(r, 1)
+    if (name === '') continue
+    npcs.push({
+      id: crypto.randomUUID(),
+      name,
+      role: text(r, 2),
+      rank: text(r, 3),
+      element: text(r, 4),
+      guild: text(r, 5),
+      realm: text(r, 6),
+      race: text(r, 7),
+      affiliation: text(r, 8),
+      occupation: text(r, 9),
+      personality: text(r, 10),
+      details: text(r, 11),
+      combat: null,
+      createdAt: stamp,
+      updatedAt: stamp,
+    })
+  }
+  return npcs
+}
+
 async function main() {
   const [input, output = 'respaldo.json'] = process.argv.slice(2)
   if (!input) {
@@ -270,15 +305,17 @@ async function main() {
     for (const d of diffs) console.log(`        - ${d}`)
   }
 
+  const npcs = readNpcs(workbook)
   const backup: BackupFile = {
     app: 'fmfid-app',
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     characters,
     changes: [],
+    npcs,
   }
   writeFileSync(output, JSON.stringify(backup, null, 2), 'utf8')
-  console.log(`\n${characters.length} personajes escritos en ${output}. Diferencias encontradas: ${problems}.`)
+  console.log(`\n${characters.length} personajes y ${npcs.length} NPCs escritos en ${output}. Diferencias encontradas: ${problems}.`)
 }
 
 main().catch((error) => {

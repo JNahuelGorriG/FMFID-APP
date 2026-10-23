@@ -167,3 +167,17 @@ details summary { cursor: pointer; font-weight: 500; }
 .ref { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 .history { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
 details[open] > summary { margin-bottom: 8px; }
+
+.field textarea {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  width: 100%;
+  resize: vertical;
+}
+.npc-stat { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.kv { display: grid; grid-template-columns: 7.5rem 1fr; gap: 8px; }
+.kv dd { text-align: left; }

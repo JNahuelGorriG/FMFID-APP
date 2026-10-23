@@ -106,3 +106,55 @@ export function CheckField({ label, checked, onChange }: CheckFieldProps) {
     </label>
   )
 }
+
+interface OptionalNumberFieldProps {
+  label: string
+  value: number | undefined
+  onChange: (value: number | undefined) => void
+  placeholder?: string
+}
+
+/** Campo numérico que puede quedar vacío (sin valor). */
+export function OptionalNumberField({ label, value, onChange, placeholder }: OptionalNumberFieldProps) {
+  const [text, setText] = useState(value === undefined ? '' : String(value))
+  const [lastValue, setLastValue] = useState(value)
+
+  if (value !== lastValue) {
+    setLastValue(value)
+    const current = text.trim() === '' ? undefined : Number(text.replace(',', '.'))
+    if (current !== value) setText(value === undefined ? '' : String(value))
+  }
+
+  return (
+    <label className="field">
+      <span className="small muted">{label}</span>
+      <input
+        inputMode="decimal"
+        aria-label={label}
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setText(e.target.value)
+          if (e.target.value.trim() === '') return onChange(undefined)
+          const n = Number(e.target.value.replace(',', '.'))
+          if (Number.isFinite(n)) onChange(n)
+        }}
+      />
+    </label>
+  )
+}
+
+interface TextAreaFieldProps {
+  label: string
+  value: string
+  onChange: (value: string) => void
+}
+
+export function TextAreaField({ label, value, onChange }: TextAreaFieldProps) {
+  return (
+    <label className="field">
+      <span className="small muted">{label}</span>
+      <textarea aria-label={label} rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  )
+}
