@@ -63,3 +63,28 @@ export function rankFromAverage(average: number): Rank | null {
   }
   return found
 }
+
+/** Posición del rango en la escala (E = 0 ... SSS+ = 15). */
+export function rankIndex(name: string): number {
+  const index = RANKS.findIndex((r) => r.name === name)
+  if (index === -1) throw new Error(`Rango desconocido: ${name}`)
+  return index
+}
+
+/**
+ * Nivel Y de las potenciaciones: E y E+ = 1, D y D+ = 2 ... SSS y SSS+ = 8.
+ * Sin rango vale 0.
+ */
+export function techniqueLevel(rank: Rank | null): number {
+  if (rank === null) return 0
+  return Math.floor(rankIndex(rank.name) / 2) + 1
+}
+
+/**
+ * Mueve un rango `steps` pasos en la escala. Positivo sube (A → A+), negativo baja.
+ * En los extremos de la escala se queda en el extremo.
+ */
+export function shiftRank(rank: Rank, steps: number): Rank {
+  const index = Math.min(RANKS.length - 1, Math.max(0, rankIndex(rank.name) + steps))
+  return RANKS[index]
+}
