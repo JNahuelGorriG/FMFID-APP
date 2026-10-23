@@ -85,6 +85,17 @@ export function describePath(path: string): string {
   if (root === 'energy') return ENERGY_LABELS[a] ?? path
   if (root === 'baseHealth') return HEALTH_LABELS[a] ?? path
   if (root === 'derived') return DERIVED_LABELS[a] ?? path
+  if (root === 'tree') {
+    const labels: Record<string, string> = {
+      bp: 'Árbol · BP',
+      mh: 'Árbol · MH',
+      gates: 'Árbol · Compuertas',
+      purchases: 'Árbol · Compras',
+      dotes: 'Árbol · Dotes',
+    }
+    return a ? (labels[a] ?? path) : 'Árbol de stats'
+  }
+  if (root === 'superStats') return 'Súper stats'
   return TOP_LABELS[root] ?? path
 }
 
@@ -94,6 +105,7 @@ export function fmtValue(value: unknown): string {
   if (typeof value === 'number') return fmt(value)
   if (typeof value === 'boolean') return value ? 'Sí' : 'No'
   if (typeof value === 'string') return value === '' ? '(vacío)' : value
+  if (Array.isArray(value)) return `${value.length} elemento(s)`
   if (typeof value === 'object' && 'kind' in value && 'rankSteps' in value) {
     const v = value as { kind: string; rankSteps: number }
     return `${v.kind} ${v.rankSteps >= 0 ? '+' : ''}${v.rankSteps}`

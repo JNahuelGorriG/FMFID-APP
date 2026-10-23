@@ -70,6 +70,9 @@ export function EffectsPanel({
   const [techRemaining, setTechRemaining] = useState(3)
 
   const resolved = resolveEffects(effects, bases)
+  /** Stat al que suma la potenciación: el elegido, el guardado por defecto, o ninguno (hay que elegir). */
+  const presetTarget: EffectTarget | null =
+    techTarget ?? resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'preguntar', offensiveStat)
   const typeName = (id: string) => types.find((t) => t.id === id)?.name ?? id
   const hasSkill = effects.some((e) => e.typeId === SKILL_TYPE_ID)
 
@@ -108,8 +111,8 @@ export function EffectsPanel({
     if (!techniques) return
     const value = techniques[techKey]
     const info = TECHNIQUES.find((t) => t.key === techKey)
-    const resolvedTarget =
-      techTarget ?? resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'ofensivo', offensiveStat)
+    const resolvedTarget = presetTarget
+    if (!resolvedTarget) return setError('Elige a qué stat suma la potenciación.')
     setError('')
     submit({
       id: crypto.randomUUID(),
@@ -188,9 +191,9 @@ export function EffectsPanel({
             />
             <SelectField
               label="Suma a"
-              value={techTarget ?? resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'ofensivo', offensiveStat)}
-              options={TARGET_OPTIONS}
-              onChange={setTechTarget}
+              value={presetTarget ?? ''}
+              options={[{ value: '', label: 'Elegir stat…' }, ...TARGET_OPTIONS]}
+              onChange={(v) => setTechTarget(v === '' ? null : (v as EffectTarget))}
             />
             <SelectField
               label="Tipo de la potenciación"

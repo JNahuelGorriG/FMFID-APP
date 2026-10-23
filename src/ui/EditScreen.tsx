@@ -71,6 +71,15 @@ function EditForm({
   const set = (path: string, value: unknown) => setDraft((d) => setIn(d, path, value, true))
   const changes = diffPaths(original, draft)
 
+  const superOf = (kind: 'primario' | 'terciario'): StatName | undefined =>
+    STAT_NAMES.find((n) => draft.superStats?.[n] === kind)
+  function setSuper(kind: 'primario' | 'terciario', value: string) {
+    const next = { ...(draft.superStats ?? {}) }
+    for (const n of STAT_NAMES) if (next[n] === kind) delete next[n]
+    if (value !== '') next[value as StatName] = kind
+    set('superStats', next)
+  }
+
   const problems = validateCharacter(draft)
   const sheet = problems.length === 0 ? characterSheet(draft) : null
 
@@ -114,6 +123,28 @@ function EditForm({
         <TextField label="Jugador" value={draft.playerName} onChange={(v) => set('playerName', v)} />
         <TextField label="Clase" value={draft.className} onChange={(v) => set('className', v)} />
         <CheckField label="Retirado" checked={draft.retired} onChange={(v) => set('retired', v)} />
+      </div>
+
+      <div className="card">
+        <h2>Súper stats</h2>
+        <p className="muted small">
+          Para personajes con un stat potenciado y otro reducido (Edward, Hernán): el súper primario recibe el 125 %
+          de Categoría y el súper terciario el 25 %.
+        </p>
+        <div className="grid-2">
+          <SelectField
+            label="Súper primario"
+            value={superOf('primario') ?? ''}
+            options={[{ value: '', label: 'Ninguno' }, ...STAT_NAMES.map((n) => ({ value: n as string, label: STAT_LABELS[n] }))]}
+            onChange={(v) => setSuper('primario', v)}
+          />
+          <SelectField
+            label="Súper terciario"
+            value={superOf('terciario') ?? ''}
+            options={[{ value: '', label: 'Ninguno' }, ...STAT_NAMES.map((n) => ({ value: n as string, label: STAT_LABELS[n] }))]}
+            onChange={(v) => setSuper('terciario', v)}
+          />
+        </div>
       </div>
 
       <h2>Stats</h2>

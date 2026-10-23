@@ -3,6 +3,9 @@ import {
   BRANCHES,
   appliedTotals,
   branchNodes,
+  categoryShare,
+  isDeferrable,
+  purchaseNode,
   branchState,
   characterSheet,
   completedBranches,
@@ -199,13 +202,39 @@ describe('Héroe y Categoría', () => {
     expect(c.energy.bonusStamina).toBe(edward.energy.bonusStamina + 25)
   })
 
-  it('Categoría: los puntos van a todos los stats y se ven multiplicados por el multiplicador de cada uno', () => {
+  it('Categoría reparte el valor: principal 100 %, secundario 75 %, terciario 50 %, súper primario 125 % y súper terciario 25 %', () => {
+    // Edward: Fuerza principal, Destreza/Percepción/Carisma secundarios, Inteligencia terciario,
+    // Constitución súper primario y Sabiduría súper terciario.
+    expect(categoryShare(edward, 'fuerza')).toBe(1)
+    expect(categoryShare(edward, 'destreza')).toBe(0.75)
+    expect(categoryShare(edward, 'inteligencia')).toBe(0.5)
+    expect(categoryShare(edward, 'constitucion')).toBe(1.25)
+    expect(categoryShare(edward, 'sabiduria')).toBe(0.25)
+  })
+
+  it('Categoría: cada stat recibe su parte del valor en la fuente Categoría', () => {
+    const c = purchaseNext(withBp(5), 'categoria', 'stat') // "2 Stat": X = 2
+    const gain = (stat: 'fuerza' | 'destreza' | 'constitucion' | 'inteligencia' | 'sabiduria') =>
+      c.sources[stat].categoria - edward.sources[stat].categoria
+    expect(gain('fuerza')).toBeCloseTo(2, 6)
+    expect(gain('destreza')).toBeCloseTo(1.5, 6)
+    expect(gain('inteligencia')).toBeCloseTo(1, 6)
+    expect(gain('constitucion')).toBeCloseTo(2.5, 6)
+    expect(gain('sabiduria')).toBeCloseTo(0.5, 6)
+  })
+
+  it('Categoría: el multiplicador del stat se aplica luego, en el total', () => {
     const c = purchaseNext(withBp(5), 'categoria', 'stat')
     const before = statTotal(edward.sources.fuerza, edward.multipliers.fuerza)
     const after = statTotal(c.sources.fuerza, c.multipliers.fuerza)
-    expect(after - before).toBeCloseTo(2 * 1.1, 6) // Fuerza de Edward ×1,1
-    const sab = statTotal(c.sources.sabiduria, c.multipliers.sabiduria) - statTotal(edward.sources.sabiduria, edward.multipliers.sabiduria)
-    expect(sab).toBeCloseTo(2 * 0.6, 6) // Sabiduría de Edward ×0,6
+    expect(after - before).toBeCloseTo(2 * 1.1, 6)
+  })
+
+  it('"2 P. Stat" de Categoría también se reparte, y se puede deshacer exacto', () => {
+    const base = buy(withBp(10), 'categoria', ['stat'])
+    const c = purchaseNext(base, 'categoria', 'stat') // el 2.º nodo ofrece energía o 2 P. Stat
+    expect(c.sources.constitucion.categoria - base.sources.constitucion.categoria).toBeCloseTo(2.5, 6)
+    expect(undoLastPurchase(c, 'categoria').sources).toEqual(base.sources)
   })
 
   it('Categoría: la energía va 2/3 a la orientación (Edward es físico)', () => {
@@ -248,12 +277,62 @@ describe('deshacer y totales', () => {
     const c = buy(buy(withBp(40), 'fuerza', ['stat', 'energia']), 'heroe', ['stat'])
     const totals = appliedTotals(treeOf(c))
     expect(totals.arbolHeroe.fuerza).toBe(2)
-    expect(totals.heroe).toBe(2)
+    expect(totals.heroe.fuerza).toBe(2)
+    expect(totals.heroe.carisma).toBe(2)
+    expect(totals.categoria.fuerza).toBe(0)
     expect(totals.stamina).toBe(25)
     expect(totals.bp).toBe(3)
   })
 
   it('un personaje sin árbol empieza vacío', () => {
     expect(treeOf(edward)).toEqual(emptyTree())
+  })
+})
+
+describe('dote o habilidad pendiente', () => {
+  const upToDote = (): Character => buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat'])
+
+  it('solo los nodos de "Dote o Hab" se pueden dejar para después', () => {
+    expect(isDeferrable(branchNodes('fuerza')[4])).toBe(true)
+    expect(isDeferrable(branchNodes('fuerza')[3])).toBe(false)
+    expect(isDeferrable(branchNodes('heroe')[4])).toBe(false) // Analizar Armamento es fija
+    expect(isDeferrable(branchNodes('categoria')[4])).toBe(false)
+  })
+
+  it('el nodo de dote no frena a los de abajo', () => {
+    const c = upToDote()
+    const state = branchState(treeOf(c), 'fuerza')
+    expect(state[4].status).toBe('disponible')
+    expect(state[5].status).toBe('disponible') // el 6.º ya se puede comprar sin la dote
+    expect(state[6].status).toBe('bloqueado')
+  })
+
+  it('se compra el nodo de abajo y la dote queda pendiente, y se puede elegir después', () => {
+    const c = purchaseNode(upToDote(), 'fuerza:1:5', 'stat')
+    let state = branchState(treeOf(c), 'fuerza')
+    expect(state[4].pending).toBe(true)
+    expect(state[4].status).toBe('disponible')
+    expect(state[5].status).toBe('comprado')
+    expect(state[6].status).toBe('disponible')
+
+    const withDote = purchaseNode(c, 'fuerza:1:4', 'dote', { note: 'Golpe certero' })
+    state = branchState(treeOf(withDote), 'fuerza')
+    expect(state[4].status).toBe('comprado')
+    expect(state[4].pending).toBe(false)
+    expect(treeOf(withDote).dotes[0].name).toBe('Golpe certero')
+  })
+
+  it('los demás nodos siguen en orden', () => {
+    expect(() => purchaseNode(upToDote(), 'fuerza:1:6', 'stat')).toThrow(/nodos de arriba/)
+    expect(() => purchaseNode(upToDote(), 'fuerza:1:0', 'stat')).toThrow(/ya está comprado/)
+    expect(() => purchaseNode(upToDote(), 'nada:1:0', 'stat')).toThrow(/no existe/)
+  })
+
+  it('una dote pendiente de la etapa 1 tampoco impide abrir las siguientes etapas', () => {
+    let c = upToDote()
+    for (let i = 5; i < 10; i++) c = purchaseNode(c, `fuerza:1:${i}`, i === 9 ? 'hab' : 'stat')
+    expect(branchState(treeOf(c), 'fuerza')[4].pending).toBe(true)
+    c = { ...c, tree: { ...treeOf(c), gates: { stage2: true, stage3: false } } }
+    expect(branchState(treeOf(c), 'fuerza').find((n) => n.node.stage === 2)?.status).toBe('disponible')
   })
 })

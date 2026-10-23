@@ -180,6 +180,14 @@ function parseTier(cell: Cell): Tier | null {
   return n === 1 || n === 2 || n === 3 ? n : null
 }
 
+/** "S1" es un súper primario y "S3" un súper terciario. */
+function parseSuper(cell: Cell): 'primario' | 'terciario' | null {
+  const v = valueOf(cell)
+  if (typeof v !== 'string') return null
+  const t = v.trim().toUpperCase()
+  return t === 'S1' ? 'primario' : t === 'S3' ? 'terciario' : null
+}
+
 /** Tiers por defecto a partir de los multiplicadores (para personajes sin columna de tiers). */
 function tiersFromMultipliers(multipliers: Record<StatName, number>): Tiers {
   const tiers = {} as Tiers
@@ -217,12 +225,16 @@ function readCharacter(ws: ExcelJS.Worksheet, block: Block): { character: Charac
   })
 
   let tiers: Tiers
+  const superStats: Character['superStats'] = {}
   if (block.tierCol > 0) {
     tiers = {} as Tiers
     STAT_NAMES.forEach((name, i) => {
-      const t = parseTier(ws.getCell(block.tierRow + i, block.tierCol).value)
+      const cell = ws.getCell(block.tierRow + i, block.tierCol).value
+      const t = parseTier(cell)
       if (t === null) throw new Error(`Falta el tier de ${name} para ${block.name}`)
       tiers[name] = t
+      const special = parseSuper(cell)
+      if (special) superStats[name] = special
     })
   } else {
     tiers = tiersFromMultipliers(multipliers)
@@ -245,6 +257,7 @@ function readCharacter(ws: ExcelJS.Worksheet, block: Block): { character: Charac
     retired: block.retired,
     className: block.className,
     tiers,
+    ...(Object.keys(superStats).length > 0 ? { superStats } : {}),
     multipliers,
     sources: stats,
     energy: { baseMana: mana.base, baseStamina: stamina.base, bonusMana: mana.bonus, bonusStamina: stamina.bonus },
@@ -366,11 +379,10 @@ function compareTree(character: Character, tree: CharacterTree): string[] {
     if (!near(src.arbolHeroe, totals.arbolHeroe[stat])) {
       diffs.push(`${stat} Árbol Héroe: Excel ${src.arbolHeroe} / compras ${totals.arbolHeroe[stat]}`)
     }
-    if (!near(src.heroe, totals.heroe)) diffs.push(`${stat} Héroe: Excel ${src.heroe} / compras ${totals.heroe}`)
-  }
-  const cat = STAT_NAMES.map((s) => character.sources[s].categoria)
-  if (!cat.every((v) => near(v, totals.categoria))) {
-    diffs.push(`Categoría (Excel por stat ${cat.join(' / ')}) / compras ${totals.categoria} a cada uno`)
+    if (!near(src.heroe, totals.heroe[stat])) diffs.push(`${stat} Héroe: Excel ${src.heroe} / compras ${totals.heroe[stat]}`)
+    if (!near(src.categoria, totals.categoria[stat])) {
+      diffs.push(`${stat} Categoría: Excel ${src.categoria} / compras ${totals.categoria[stat]}`)
+    }
   }
   if (!near(character.energy.bonusMana, totals.mana)) diffs.push(`bonos de maná: Excel ${character.energy.bonusMana} / compras ${totals.mana}`)
   if (!near(character.energy.bonusStamina, totals.stamina)) diffs.push(`bonos de estamina: Excel ${character.energy.bonusStamina} / compras ${totals.stamina}`)

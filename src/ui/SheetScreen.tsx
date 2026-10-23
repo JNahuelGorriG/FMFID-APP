@@ -7,9 +7,10 @@ interface Props {
   id: string
   onBack: () => void
   onEdit: () => void
+  onOpenTree: () => void
 }
 
-export function SheetScreen({ id, onBack, onEdit }: Props) {
+export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
   const character = useLiveQuery(() => repo.get(id), [id])
   const history = useLiveQuery(() => repo.history(id), [id])
 
@@ -49,6 +50,10 @@ export function SheetScreen({ id, onBack, onEdit }: Props) {
           </div>
         ))}
       </div>
+
+      <button className="btn secondary tree-link" onClick={onOpenTree}>
+        Árbol de stats
+      </button>
 
       <div className="grid-3">
         <div className="card tile">

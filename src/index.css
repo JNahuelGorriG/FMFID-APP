@@ -233,3 +233,10 @@ details[open] > summary { margin-bottom: 8px; }
 
 .cmp.ref td.first { text-align: left; color: var(--accent-soft); font-weight: 600; }
 .cmp.ref th { white-space: normal; }
+
+.tree-link { width: 100%; margin-bottom: 10px; }
+.node { display: flex; flex-direction: column; gap: 4px; }
+.node.done { border-color: var(--accent); }
+.node.locked { opacity: 0.6; }
+.node .head { display: flex; align-items: center; gap: 8px; }
+.stage-title { margin: 14px 0 6px; }

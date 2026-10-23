@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { db } from '../db'
 import { edward } from '../rules/fixtures'
 import { combatRepo, npcRepo, repo } from './data'
-import { defaultEnemyProfile, newNpcTemplate } from '../rules'
+import { defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext } from '../rules'
+import type { Character } from '../rules'
 
 const { id: _id, createdAt: _c, updatedAt: _u, ...edwardData } = edward
 
@@ -582,6 +583,10 @@ describe('app', () => {
     const option = await screen.findByRole('option', { name: 'Kyushu (+25)' })
     expect(option).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Potenciación'), { target: { value: 'kyushu' } })
+    // depende de cómo la use el jugador: hay que elegir a qué stat suma
+    fireEvent.click(screen.getByText('Aplicar potenciación'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Elige a qué stat suma')
+    fireEvent.change(screen.getByLabelText('Suma a'), { target: { value: 'inteligencia' } })
     fireEvent.click(screen.getByText('Aplicar potenciación'))
 
     await waitFor(async () => {
@@ -616,5 +621,119 @@ describe('app', () => {
       const [c] = await combatRepo.list()
       expect(c.participants[0].pc?.effects[0]).toMatchObject({ name: 'Ki', target: 'constitucion' })
     })
+  })
+
+  /** Abre el árbol de Edward. */
+  async function openTree(extra: Partial<Character> = {}) {
+    await repo.create({ ...edwardData, ...extra })
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Árbol de stats'))
+    await screen.findByText('Árbol de Edward')
+  }
+
+  const edwardInDb = async () => (await repo.list())[0]
+
+  it('árbol: se cargan los BP, se compra un nodo y suma el stat con su historial', async () => {
+    await openTree()
+    fireEvent.change(screen.getByLabelText('BP disponibles'), { target: { value: '10' } })
+    fireEvent.click(screen.getByText('Guardar saldos'))
+    await waitFor(async () => expect((await edwardInDb()).tree?.bp).toBe(10))
+
+    fireEvent.click(screen.getAllByText('Comprar')[0])
+    fireEvent.click(await screen.findByText('Confirmar compra'))
+
+    await waitFor(async () => {
+      const c = await edwardInDb()
+      expect(c.tree?.bp).toBe(9)
+      expect(c.tree?.purchases).toHaveLength(1)
+      expect(c.sources.fuerza.arbolHeroe).toBe(edward.sources.fuerza.arbolHeroe + 2)
+    })
+    expect(await screen.findByText('Comprado')).toBeTruthy()
+    const history = await repo.history((await edwardInDb()).id)
+    expect(history.some((h) => h.path === 'tree.purchases' && h.reason.includes('Fuerza etapa 1 nodo 1'))).toBe(true)
+  })
+
+  it('árbol: sin BP suficientes avisa y no compra', async () => {
+    await openTree()
+    fireEvent.click(screen.getAllByText('Comprar')[0])
+    fireEvent.click(await screen.findByText('Confirmar compra'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Faltan BP')
+    expect((await edwardInDb()).tree).toBeUndefined()
+  })
+
+  it('árbol: la etapa 2 espera la compuerta y el GM la abre', async () => {
+    let c: Character = { ...edward, tree: { ...emptyTree(), bp: 100 } }
+    for (let i = 0; i < 10; i++) c = purchaseNext(c, 'fuerza', i % 5 === 4 ? 'hab' : 'stat')
+    const { id: _i, createdAt: _c, updatedAt: _u, ...data } = c
+    await openTree(data)
+
+    expect(await screen.findByText(/Compuerta cerrada/)).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Etapa 2 abierta'))
+    await waitFor(async () => expect((await edwardInDb()).tree?.gates.stage2).toBe(true))
+    await waitFor(() => expect(screen.queryByText(/Compuerta cerrada: Completar 4 ramas/)).toBeNull())
+  })
+
+  it('árbol: una dote se compra sin nombre, queda pendiente y se completa después', async () => {
+    let c: Character = { ...edward, tree: { ...emptyTree(), bp: 50 } }
+    for (let i = 0; i < 4; i++) c = purchaseNext(c, 'fuerza', 'stat')
+    const { id: _i, createdAt: _c, updatedAt: _u, ...data } = c
+    await openTree(data)
+
+    // el nodo 5 (dote) y el 6 están disponibles: se compra el 6 y la dote queda pendiente
+    const buyButtons = await screen.findAllByText('Comprar')
+    fireEvent.click(buyButtons[1])
+    fireEvent.click(await screen.findByText('Confirmar compra'))
+    await waitFor(async () => expect((await edwardInDb()).tree?.purchases).toHaveLength(5))
+    expect(await screen.findByText('Pendiente')).toBeTruthy()
+
+    // ahora la dote, en blanco
+    fireEvent.click(screen.getAllByText('Comprar')[0])
+    fireEvent.change(await screen.findByLabelText('Elección del nodo 5'), { target: { value: 'dote' } })
+    fireEvent.click(screen.getByText('Confirmar compra'))
+    await waitFor(async () => expect((await edwardInDb()).tree?.dotes).toHaveLength(1))
+    expect((await edwardInDb()).tree?.dotes[0].name).toBe('')
+
+    // y se le pone nombre después
+    fireEvent.change(await screen.findByLabelText('Nombre de la dote 1'), { target: { value: 'Golpe certero' } })
+    fireEvent.click(screen.getByText('Guardar dotes'))
+    await waitFor(async () => expect((await edwardInDb()).tree?.dotes[0].name).toBe('Golpe certero'))
+  })
+
+  it('árbol: deshacer la última compra devuelve los BP y quita el stat', async () => {
+    let c: Character = { ...edward, tree: { ...emptyTree(), bp: 5 } }
+    c = purchaseNext(c, 'fuerza', 'stat')
+    const { id: _i, createdAt: _c, updatedAt: _u, ...data } = c
+    await openTree(data)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.click(screen.getByText('Deshacer la última compra de Fuerza'))
+    await waitFor(async () => {
+      const after = await edwardInDb()
+      expect(after.tree?.bp).toBe(5)
+      expect(after.tree?.purchases).toHaveLength(0)
+      expect(after.sources.fuerza.arbolHeroe).toBe(edward.sources.fuerza.arbolHeroe)
+    })
+  })
+
+  it('árbol: muestra las diferencias con las compras y se pueden ajustar', async () => {
+    let c: Character = { ...edward, tree: { ...emptyTree(), bp: 5 } }
+    c = purchaseNext(c, 'fuerza', 'stat')
+    // el personaje ya traía puntos de antes que las compras no explican
+    c = { ...c, sources: { ...c.sources, fuerza: { ...c.sources.fuerza, arbolHeroe: 40 } } }
+    const { id: _i, createdAt: _c, updatedAt: _u, ...data } = c
+    await openTree(data)
+    fireEvent.click(screen.getByText(/Diferencias con las compras/))
+    fireEvent.click(await screen.findByLabelText('Ajustar Fuerza · Árbol héroe'))
+    await waitFor(async () => expect((await edwardInDb()).sources.fuerza.arbolHeroe).toBe(2))
+  })
+
+  it('edición: los súper stats se pueden cambiar', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Editar'))
+    fireEvent.change(await screen.findByLabelText('Súper primario'), { target: { value: 'fuerza' } })
+    fireEvent.click(screen.getByText('Guardar cambios'))
+    await waitFor(async () => expect((await edwardInDb()).superStats).toEqual({ fuerza: 'primario', sabiduria: 'terciario' }))
   })
 })

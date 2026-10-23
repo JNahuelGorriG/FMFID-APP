@@ -114,9 +114,10 @@ describe('tablas de la mesa', () => {
 })
 
 describe('potenciaciones como buff', () => {
-  it('hay un destino por cada potenciación', () => {
-    for (const t of TECHNIQUES) expect(DEFAULT_TECHNIQUE_TARGETS[t.key]).toBeDefined()
+  it('por defecto se pregunta el stat en cada uso', () => {
+    for (const t of TECHNIQUES) expect(DEFAULT_TECHNIQUE_TARGETS[t.key]).toBe('preguntar')
     expect(TECHNIQUES).toHaveLength(10)
+    expect(resolveTechniqueTarget('preguntar', 'fuerza')).toBeNull()
   })
 
   it('"ofensivo" se resuelve al stat ofensivo del combatiente', () => {

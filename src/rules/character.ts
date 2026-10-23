@@ -26,6 +26,11 @@ export interface Character {
   retired: boolean
   className: string
   tiers: Tiers
+  /**
+   * Súper stats (Edward y Hernán): un stat "súper primario" que recibe el 125 % de Categoría y
+   * uno "súper terciario" que recibe el 25 %. Opcional.
+   */
+  superStats?: Partial<Record<keyof Stats, 'primario' | 'terciario'>>
   multipliers: Stats
   sources: Record<keyof Stats, StatSources>
   energy: CharacterEnergy

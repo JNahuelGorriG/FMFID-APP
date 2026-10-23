@@ -77,6 +77,7 @@ function EffectTypesEditor() {
 }
 
 const TECHNIQUE_TARGET_OPTIONS: { value: TechniqueTarget; label: string }[] = [
+  { value: 'preguntar', label: 'Preguntar cada vez' },
   { value: 'ofensivo', label: 'Stat ofensivo (Fuerza o Destreza)' },
   ...EFFECT_TARGETS.map((t) => ({ value: t as TechniqueTarget, label: TARGET_LABELS[t] })),
 ]
@@ -92,7 +93,8 @@ function TechniqueTargetsEditor() {
     <div className="card">
       <h2>Potenciaciones: a qué suman</h2>
       <p className="muted small">
-        Al aplicar una potenciación como buff, suma su valor a este stat. Puedes cambiarlo en cada uso.
+        Un mismo poder puede servir para cosas distintas: por defecto se pregunta a qué stat suma en
+        cada uso. Si una potenciación casi siempre va al mismo, puedes dejarlo preelegido acá.
       </p>
       {TECHNIQUES.map((t) => (
         <SelectField

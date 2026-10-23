@@ -25,6 +25,7 @@ export const edward: Character = {
     destreza: 2, percepcion: 2, carisma: 2,
     inteligencia: 3, sabiduria: 3,
   },
+  superStats: { constitucion: 'primario', sabiduria: 'terciario' },
   multipliers: {
     fuerza: 1.1, destreza: 1, constitucion: 1.4, percepcion: 1,
     inteligencia: 0.9, sabiduria: 0.6, carisma: 1,

@@ -146,8 +146,10 @@ export function energySplit(branch: BranchId, amount: number, kind: OrientationK
 
 /** Lo que una compra suma, guardado para poder deshacerla. */
 export interface Applied {
-  /** Puntos de stat de la rama (a cada stat si la rama es Héroe o Categoría). */
+  /** Puntos de stat del nodo (el valor "crudo", antes de repartirlo entre los stats). */
   points: number
+  /** Lo que suma a cada stat en la fuente de la rama (Árbol Héroe, Héroe o Categoría). */
+  perStat: Partial<Record<StatName, number>>
   mana: number
   stamina: number
   mh: number
@@ -193,15 +195,36 @@ export function treeOf(character: Pick<Character, 'tree'>): CharacterTree {
   return character.tree ?? emptyTree()
 }
 
+/**
+ * Cuánto del valor de Categoría recibe un stat: el principal 100 %, el secundario 75 % y el
+ * terciario 50 %. Un súper primario recibe 125 % y un súper terciario 25 %.
+ */
+export function categoryShare(
+  character: Pick<Character, 'tiers' | 'superStats'>,
+  stat: StatName,
+): number {
+  const special = character.superStats?.[stat]
+  if (special === 'primario') return 1.25
+  if (special === 'terciario') return 0.25
+  const tier = character.tiers[stat]
+  return tier === 1 ? 1 : tier === 2 ? 0.75 : 0.5
+}
+
 /** Lo que suma elegir esa opción en ese nodo. */
 export function appliedFor(
-  character: Pick<Character, 'energy'>,
+  character: Pick<Character, 'energy' | 'tiers' | 'superStats'>,
   node: NodeDef,
   choice: Choice,
 ): Applied {
-  const none: Applied = { points: 0, mana: 0, stamina: 0, mh: 0 }
+  const none: Applied = { points: 0, perStat: {}, mana: 0, stamina: 0, mh: 0 }
   if (!node.options.includes(choice)) throw new Error('Esa opción no existe en este nodo.')
-  if (choice === 'stat') return { ...none, points: node.points }
+  if (choice === 'stat') {
+    const perStat: Partial<Record<StatName, number>> = {}
+    if (node.branch === 'heroe') for (const s of STAT_NAMES) perStat[s] = node.points
+    else if (node.branch === 'categoria') for (const s of STAT_NAMES) perStat[s] = node.points * categoryShare(character, s)
+    else perStat[node.branch] = node.points
+    return { ...none, points: node.points, perStat }
+  }
   if (choice === 'mh') return { ...none, mh: node.mh }
   if (choice === 'energia') {
     const split = energySplit(node.branch, node.energy, orientation(character))
@@ -218,30 +241,52 @@ export interface NodeState {
   /** Por qué está bloqueado. */
   reason: string
   purchase: Purchase | null
+  /** Dote o habilidad sin comprar cuando ya se compraron nodos que están más abajo. */
+  pending: boolean
+}
+
+/** Los nodos de "Dote o Hab" se pueden dejar para después: no frenan a los de abajo. */
+export function isDeferrable(node: NodeDef): boolean {
+  return node.options.includes('dote') && node.options.includes('hab')
 }
 
 /**
- * Estado de cada nodo de una rama. Se compran de arriba hacia abajo, sin saltear. Una etapa
- * nueva pide la compuerta abierta. El saldo de BP no bloquea el nodo: se avisa al comprarlo.
+ * Estado de cada nodo de una rama. Los nodos se compran de arriba hacia abajo, sin saltear,
+ * salvo los de "Dote o Hab", que el jugador puede dejar para después. Una etapa nueva pide la
+ * compuerta abierta. El saldo de BP no bloquea el nodo: se avisa al comprarlo.
  */
 export function branchState(tree: CharacterTree, branch: BranchId): NodeState[] {
   const bought = new Map(tree.purchases.map((p) => [p.nodeId, p]))
-  let nextFound = false
+  const nodes = branchNodes(branch)
+  const lastBought = nodes.reduce((last, n, i) => (bought.has(n.id) ? i : last), -1)
 
-  return branchNodes(branch).map((node) => {
+  let mainFound = false // ya apareció el primer nodo normal sin comprar
+  return nodes.map((node, i) => {
     const purchase = bought.get(node.id) ?? null
-    if (purchase) return { node, status: 'comprado', reason: '', purchase }
+    if (purchase) return { node, status: 'comprado', reason: '', purchase, pending: false }
 
-    if (nextFound) return { node, status: 'bloqueado', reason: 'Antes hay que comprar los nodos de arriba.', purchase: null }
-    nextFound = true
+    const gate =
+      node.stage === 2 && !tree.gates.stage2
+        ? `Compuerta cerrada: ${GATE_TEXT[2]}.`
+        : node.stage === 3 && !tree.gates.stage3
+          ? `Compuerta cerrada: ${GATE_TEXT[3]}.`
+          : ''
 
-    if (node.stage === 2 && !tree.gates.stage2) {
-      return { node, status: 'bloqueado', reason: `Compuerta cerrada: ${GATE_TEXT[2]}.`, purchase: null }
+    if (isDeferrable(node)) {
+      // Se puede comprar cuando se llegó a él, y no frena a los de abajo.
+      if (mainFound) return { node, status: 'bloqueado', reason: 'Antes hay que comprar los nodos de arriba.', purchase: null, pending: false }
+      return {
+        node,
+        status: gate ? 'bloqueado' : 'disponible',
+        reason: gate,
+        purchase: null,
+        pending: i < lastBought,
+      }
     }
-    if (node.stage === 3 && !tree.gates.stage3) {
-      return { node, status: 'bloqueado', reason: `Compuerta cerrada: ${GATE_TEXT[3]}.`, purchase: null }
-    }
-    return { node, status: 'disponible', reason: '', purchase: null }
+
+    if (mainFound) return { node, status: 'bloqueado', reason: 'Antes hay que comprar los nodos de arriba.', purchase: null, pending: false }
+    mainFound = true
+    return { node, status: gate ? 'bloqueado' : 'disponible', reason: gate, purchase: null, pending: false }
   })
 }
 
@@ -259,19 +304,23 @@ export function branchesWithStagesDone(tree: CharacterTree, upTo: Stage): Branch
   )
 }
 
-function applySources(character: Character, branch: BranchId, points: number, sign: 1 | -1): Character {
-  if (points === 0) return character
-  const sources = { ...character.sources }
+function applySources(
+  character: Character,
+  branch: BranchId,
+  perStat: Partial<Record<StatName, number>>,
+  sign: 1 | -1,
+): Character {
   const field = branch === 'heroe' ? 'heroe' : branch === 'categoria' ? 'categoria' : 'arbolHeroe'
-  const targets: StatName[] = branch === 'heroe' || branch === 'categoria' ? [...STAT_NAMES] : [branch]
-  for (const stat of targets) {
-    sources[stat] = { ...sources[stat], [field]: sources[stat][field] + sign * points }
+  const sources = { ...character.sources }
+  for (const stat of STAT_NAMES) {
+    const delta = perStat[stat]
+    if (delta) sources[stat] = { ...sources[stat], [field]: sources[stat][field] + sign * delta }
   }
   return { ...character, sources }
 }
 
 function applyAll(character: Character, branch: BranchId, applied: Applied, sign: 1 | -1): Character {
-  const withPoints = applySources(character, branch, applied.points, sign)
+  const withPoints = applySources(character, branch, applied.perStat, sign)
   return {
     ...withPoints,
     energy: {
@@ -291,47 +340,46 @@ export interface PurchaseOptions {
 }
 
 /**
- * Compra el siguiente nodo de una rama con la opción elegida. Descuenta los BP, suma el stat,
- * la energía o los MH a donde corresponde, y anota la dote si la hay. La elección es permanente
- * (el GM puede deshacer la última compra para corregir un error).
+ * Compra un nodo con la opción elegida. Descuenta los BP, suma el stat, la energía o los MH a
+ * donde corresponde, y anota la dote si la hay. La elección es permanente (el GM puede deshacer
+ * la última compra de una rama para corregir un error).
  */
-export function purchaseNext(
+export function purchaseNode(
   character: Character,
-  branch: BranchId,
+  id: string,
   choice: Choice,
   options: PurchaseOptions = {},
 ): Character {
+  const node = findNode(id)
+  if (!node) throw new Error('Ese nodo no existe.')
   const tree = treeOf(character)
-  const next = branchState(tree, branch).find((n) => n.status !== 'comprado')
-  if (!next) throw new Error('Esa rama ya está completa.')
-  if (next.status === 'bloqueado') throw new Error(next.reason)
+  const state = branchState(tree, node.branch).find((n) => n.node.id === id)
+  if (!state) throw new Error('Ese nodo no existe.')
+  if (state.status === 'comprado') throw new Error('Ese nodo ya está comprado.')
+  if (state.status === 'bloqueado') throw new Error(state.reason)
+  if (tree.bp < node.cost) throw new Error(`Faltan BP: el nodo cuesta ${node.cost} y hay ${tree.bp}.`)
 
-  const node = next.node
-  if (tree.bp < node.cost) {
-    throw new Error(`Faltan BP: el nodo cuesta ${node.cost} y hay ${tree.bp}.`)
-  }
   const applied = appliedFor(character, node, choice)
-  const at = options.now ?? new Date().toISOString()
   const purchase: Purchase = {
     nodeId: node.id,
-    branch,
+    branch: node.branch,
     stage: node.stage,
     index: node.index,
     cost: node.cost,
     choice,
     note: options.note?.trim() ?? '',
     applied,
-    at,
+    at: options.now ?? new Date().toISOString(),
   }
   const dotes: Dote[] =
     choice === 'dote'
       ? [
           ...tree.dotes,
-          { id: `${node.id}`, name: options.note?.trim() ?? '', description: options.description?.trim() ?? '', nodeId: node.id },
+          { id: node.id, name: purchase.note, description: options.description?.trim() ?? '', nodeId: node.id },
         ]
       : tree.dotes
 
-  const updated = applyAll(character, branch, applied, 1)
+  const updated = applyAll(character, node.branch, applied, 1)
   return {
     ...updated,
     tree: {
@@ -342,6 +390,19 @@ export function purchaseNext(
       dotes,
     },
   }
+}
+
+/** Compra el primer nodo disponible de una rama. */
+export function purchaseNext(
+  character: Character,
+  branch: BranchId,
+  choice: Choice,
+  options: PurchaseOptions = {},
+): Character {
+  const state = branchState(treeOf(character), branch)
+  const next = state.find((n) => n.status !== 'comprado')
+  if (!next) throw new Error('Esa rama ya está completa.')
+  return purchaseNode(character, next.node.id, choice, options)
 }
 
 /** Deshace la última compra de una rama (corrección del GM): devuelve los BP y resta lo que sumó. */
@@ -365,24 +426,24 @@ export function undoLastPurchase(character: Character, branch: BranchId): Charac
 /** Suma lo aplicado por las compras de cada fuente, para comparar con los valores del personaje. */
 export function appliedTotals(tree: CharacterTree): {
   arbolHeroe: Record<StatName, number>
-  heroe: number
-  categoria: number
+  heroe: Record<StatName, number>
+  categoria: Record<StatName, number>
   mana: number
   stamina: number
   mh: number
   bp: number
 } {
-  const arbolHeroe = Object.fromEntries(STAT_NAMES.map((s) => [s, 0])) as Record<StatName, number>
-  let heroe = 0
-  let categoria = 0
+  const zero = () => Object.fromEntries(STAT_NAMES.map((s) => [s, 0])) as Record<StatName, number>
+  const arbolHeroe = zero()
+  const heroe = zero()
+  const categoria = zero()
   let mana = 0
   let stamina = 0
   let mh = 0
   let bp = 0
   for (const p of tree.purchases) {
-    if (p.branch === 'heroe') heroe += p.applied.points
-    else if (p.branch === 'categoria') categoria += p.applied.points
-    else arbolHeroe[p.branch] += p.applied.points
+    const target = p.branch === 'heroe' ? heroe : p.branch === 'categoria' ? categoria : arbolHeroe
+    for (const stat of STAT_NAMES) target[stat] += p.applied.perStat[stat] ?? 0
     mana += p.applied.mana
     stamina += p.applied.stamina
     mh += p.applied.mh

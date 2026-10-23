@@ -279,13 +279,12 @@ describe('destino de las potenciaciones', () => {
   it('devuelve los de fábrica y guarda los cambios sin perder el resto', async () => {
     const settings = createSettingsRepository(db)
     const defaults = await settings.getTechniqueTargets()
-    expect(defaults.kyushu).toBe('inteligencia')
-    expect(defaults.ki).toBe('fuerza')
-    expect(defaults.reiatsu).toBe('ofensivo')
+    expect(defaults.kyushu).toBe('preguntar')
+    expect(defaults.ki).toBe('preguntar')
 
     await settings.saveTechniqueTargets({ ...defaults, kyushu: 'sabiduria' })
     const saved = await settings.getTechniqueTargets()
     expect(saved.kyushu).toBe('sabiduria')
-    expect(saved.ki).toBe('fuerza')
+    expect(saved.ki).toBe('preguntar')
   })
 })

@@ -11,6 +11,7 @@ export const OPTIONAL_PATHS: ReadonlySet<string> = new Set([
   'derived.magicDefenseWeights',
   'derived.agilityStat',
   'tree',
+  'superStats',
 ])
 
 export type NewCharacter = Omit<Character, 'id' | 'createdAt' | 'updatedAt'>

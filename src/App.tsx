@@ -10,6 +10,7 @@ import { NpcScreen } from './ui/NpcScreen'
 import { NpcsScreen } from './ui/NpcsScreen'
 import { SheetScreen } from './ui/SheetScreen'
 import { TablesScreen } from './ui/TablesScreen'
+import { TreeScreen } from './ui/TreeScreen'
 
 type Tab = 'personajes' | 'combate' | 'npcs' | 'mas'
 
@@ -34,6 +35,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('personajes')
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [showTree, setShowTree] = useState(false)
   const [openNpcId, setOpenNpcId] = useState<string | null>(null)
   const [editingNpc, setEditingNpc] = useState(false)
   const [showTables, setShowTables] = useState(false)
@@ -55,6 +57,7 @@ export default function App() {
     setTab(next)
     setOpenId(null)
     setEditing(false)
+    setShowTree(false)
     setOpenNpcId(null)
     setEditingNpc(false)
     setOpenCombatId(null)
@@ -75,8 +78,15 @@ export default function App() {
                 setOpenId(null)
               }}
             />
+          ) : openId && showTree ? (
+            <TreeScreen id={openId} onBack={() => setShowTree(false)} />
           ) : openId ? (
-            <SheetScreen id={openId} onBack={() => setOpenId(null)} onEdit={() => setEditing(true)} />
+            <SheetScreen
+              id={openId}
+              onBack={() => setOpenId(null)}
+              onEdit={() => setEditing(true)}
+              onOpenTree={() => setShowTree(true)}
+            />
           ) : (
             <CharactersScreen
               onOpen={setOpenId}

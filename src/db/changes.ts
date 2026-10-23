@@ -19,6 +19,9 @@ export function deepEqual(a: unknown, b: unknown): boolean {
   return false
 }
 
+/** Objetos cuyas claves pueden aparecer o desaparecer: se guardan enteros, no clave por clave. */
+const ATOMIC = new Set(['superStats'])
+
 /** Campos que no cuentan como cambios del usuario. */
 const IGNORED = new Set(['id', 'createdAt', 'updatedAt'])
 
@@ -28,6 +31,7 @@ const IGNORED = new Set(['id', 'createdAt', 'updatedAt'])
  */
 export function diffPaths(before: unknown, after: unknown, prefix = ''): PathChange[] {
   if (deepEqual(before, after)) return []
+  if (ATOMIC.has(prefix)) return [{ path: prefix, value: after }]
   if (isPlainObject(before) && isPlainObject(after)) {
     const keys = new Set([...Object.keys(before), ...Object.keys(after)])
     return [...keys].flatMap((key) =>

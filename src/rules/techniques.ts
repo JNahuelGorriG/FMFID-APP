@@ -15,30 +15,31 @@ export const TECHNIQUES: { key: keyof Techniques; name: string }[] = [
   { key: 'reiatsuOverride', name: 'Reiatsu Override' },
 ]
 
-/** A qué suma una potenciación. "ofensivo" es el stat ofensivo del combatiente (Fuerza o Destreza). */
-export type TechniqueTarget = EffectTarget | 'ofensivo'
-
 /**
- * Destino inicial de cada potenciación: el stat que más pesa en su fórmula. Es una suposición
- * editable desde la app, porque el Excel no indica a qué stat suma cada una.
+ * A qué suma una potenciación. "preguntar" deja la elección para cada uso (depende de cómo la
+ * use el jugador). "ofensivo" es el stat ofensivo del combatiente (Fuerza o Destreza).
  */
+export type TechniqueTarget = EffectTarget | 'ofensivo' | 'preguntar'
+
+/** Por defecto se pregunta en cada uso: el mismo Kyushu puede servir para cosas distintas. */
 export const DEFAULT_TECHNIQUE_TARGETS: Record<keyof Techniques, TechniqueTarget> = {
-  kyushu: 'inteligencia',
-  magyushuru: 'inteligencia',
-  aetheriumAscendance: 'inteligencia',
-  aetheriumMastery: 'inteligencia',
-  reiatsu: 'ofensivo',
-  ki: 'fuerza',
-  haKi: 'fuerza',
-  esencia: 'carisma',
-  eReinforced: 'carisma',
-  reiatsuOverride: 'ofensivo',
+  kyushu: 'preguntar',
+  magyushuru: 'preguntar',
+  aetheriumAscendance: 'preguntar',
+  aetheriumMastery: 'preguntar',
+  reiatsu: 'preguntar',
+  ki: 'preguntar',
+  haKi: 'preguntar',
+  esencia: 'preguntar',
+  eReinforced: 'preguntar',
+  reiatsuOverride: 'preguntar',
 }
 
-/** Resuelve "ofensivo" al stat concreto del combatiente. */
+/** Resuelve "ofensivo" al stat concreto del combatiente. Devuelve null si hay que preguntar. */
 export function resolveTechniqueTarget(
   target: TechniqueTarget,
   offensiveStat: 'fuerza' | 'destreza',
-): EffectTarget {
+): EffectTarget | null {
+  if (target === 'preguntar') return null
   return target === 'ofensivo' ? offensiveStat : target
 }
