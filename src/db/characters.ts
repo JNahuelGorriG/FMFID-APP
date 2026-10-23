@@ -10,6 +10,7 @@ const now = (): string => new Date().toISOString()
 export const OPTIONAL_PATHS: ReadonlySet<string> = new Set([
   'derived.magicDefenseWeights',
   'derived.agilityStat',
+  'tree',
 ])
 
 export type NewCharacter = Omit<Character, 'id' | 'createdAt' | 'updatedAt'>

@@ -569,4 +569,52 @@ describe('app', () => {
     pick('precios')
     expect(await screen.findByText('125.000')).toBeTruthy()
   })
+
+  it('participante: una potenciación (Kyushu) se aplica como buff con su valor, y termina con la habilidad', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    // Edward: Kyushu = round(0,82·(0,07·115,04 + 0,03·158,04)) + 5·3 = 25
+    const option = await screen.findByRole('option', { name: 'Kyushu (+25)' })
+    expect(option).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Potenciación'), { target: { value: 'kyushu' } })
+    fireEvent.click(screen.getByText('Aplicar potenciación'))
+
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      const effects = c.participants[0].pc?.effects ?? []
+      expect(effects).toHaveLength(1)
+      expect(effects[0]).toMatchObject({
+        name: 'Kyushu', kind: 'buff', typeId: 'habilidad', target: 'inteligencia', flat: 25, percent: 0,
+        duration: { unit: 'habilidad' },
+      })
+    })
+
+    fireEvent.click(await screen.findByText('Terminó la habilidad'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.effects).toEqual([])
+    })
+  })
+
+  it('participante: la potenciación se puede cambiar de stat al aplicarla', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    fireEvent.change(await screen.findByLabelText('Potenciación'), { target: { value: 'ki' } })
+    fireEvent.change(screen.getByLabelText('Suma a'), { target: { value: 'constitucion' } })
+    fireEvent.click(screen.getByText('Aplicar potenciación'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.effects[0]).toMatchObject({ name: 'Ki', target: 'constitucion' })
+    })
+  })
 })

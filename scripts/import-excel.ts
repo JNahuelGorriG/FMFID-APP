@@ -12,8 +12,31 @@ import ExcelJS from 'exceljs'
 import { writeFileSync } from 'node:fs'
 import { BACKUP_VERSION } from '../src/db/backup'
 import type { BackupFile } from '../src/db/backup'
-import { STAT_NAMES, characterSheet } from '../src/rules'
-import type { Character, DerivedConfig, Health, Npc, StatName, StatSources, Tier, Tiers } from '../src/rules'
+import {
+  BRANCHES,
+  NODES_PER_STAGE,
+  STAGES,
+  STAT_NAMES,
+  appliedFor,
+  appliedTotals,
+  characterSheet,
+  emptyTree,
+  findNode,
+  nodeId,
+} from '../src/rules'
+import type {
+  Character,
+  CharacterTree,
+  Choice,
+  DerivedConfig,
+  Health,
+  Npc,
+  Purchase,
+  StatName,
+  StatSources,
+  Tier,
+  Tiers,
+} from '../src/rules'
 
 const SOURCE_KEYS: (keyof StatSources)[] = [
   'puntosIniciales', 'arbolHeroe', 'heroe', 'categoria',
@@ -34,6 +57,9 @@ interface Block {
   derived: DerivedConfig
   /** Promedio de stats corregido por el GM, solo para verificar. */
   expectedAverage?: number
+  /** Fila de la cabecera de su copia del árbol en la hoja "Arbol Stats" y su columna en la tabla de BP. */
+  treeHeader: number
+  bpColumn: number | null
 }
 
 /**
@@ -43,6 +69,7 @@ interface Block {
 const BLOCKS: Block[] = [
   {
     name: 'Colt', player: 'Denis', className: 'Ranger', retired: false, top: 1, tierCol: 19, tierRow: 2,
+    treeHeader: 41, bpColumn: 43,
     health: { leve: 8, medio: 5, letal: 2 }, expectedAverage: 458,
     derived: {
       physDamageWeapon: { kind: 'mediana', rankSteps: 0 },
@@ -53,6 +80,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Conrad', player: 'Santana', className: 'Espartano', retired: false, top: 11, tierCol: 19, tierRow: 28,
+    treeHeader: 248, bpColumn: 47,
     health: { leve: 8, medio: 6, letal: 2 }, expectedAverage: 367,
     derived: {
       physDamageWeapon: { kind: 'grande', rankSteps: 1 },
@@ -64,6 +92,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Roy', player: 'Maxi', className: '', retired: false, top: 21, tierCol: 27, tierRow: 2,
+    treeHeader: 77, bpColumn: 45,
     health: { leve: 8, medio: 5, letal: 2 }, expectedAverage: 319,
     derived: {
       physDamageWeapon: { kind: 'pequena', rankSteps: -1 },
@@ -74,6 +103,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Edward', player: 'Mauro', className: 'Boxeador', retired: false, top: 31, tierCol: 27, tierRow: 28,
+    treeHeader: 111, bpColumn: 46,
     health: { leve: 10, medio: 7, letal: 3 }, expectedAverage: 477,
     derived: {
       physDamageWeapon: { kind: 'pesada', rankSteps: 0 },
@@ -86,6 +116,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Saizo', player: 'Facu', className: '', retired: false, top: 41, tierCol: 35, tierRow: 2,
+    treeHeader: 145, bpColumn: 44,
     health: { leve: 8, medio: 5, letal: 2 }, expectedAverage: 399,
     derived: {
       physDamageWeapon: { kind: 'mediana', rankSteps: 1 },
@@ -96,6 +127,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Hernán', player: 'Juan', className: '', retired: false, top: 51, tierCol: 35, tierRow: 28,
+    treeHeader: 179, bpColumn: 48,
     health: { leve: 8, medio: 5, letal: 2 }, expectedAverage: 405,
     derived: {
       physDamageWeapon: null,
@@ -106,6 +138,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Enjin', player: 'Marcos', className: '', retired: false, top: 61, tierCol: 27, tierRow: 54,
+    treeHeader: 283, bpColumn: 49,
     health: { leve: 8, medio: 5, letal: 2 }, expectedAverage: 289,
     derived: {
       physDamageWeapon: { kind: 'mediana', rankSteps: 1 },
@@ -116,6 +149,7 @@ const BLOCKS: Block[] = [
   },
   {
     name: 'Ciro', player: 'Marcos (anterior)', className: '', retired: true, top: 71, tierCol: 19, tierRow: 54,
+    treeHeader: 213, bpColumn: null,
     health: { leve: 8, medio: 5, letal: 2 },
     derived: {
       physDamageWeapon: { kind: 'pequena', rankSteps: -1 },
@@ -228,6 +262,121 @@ interface ExcelCheck {
   stamina: number
 }
 
+const GREEN = 'FFC4D79B'
+const TREE_COLUMNS = [5, 8, 11, 14, 17, 20, 23, 26, 29]
+
+/** Lo que dice la celda de una opción elegida, pasado a elección. null si todavía muestra las dos opciones. */
+function choiceFromText(text: string, options: Choice[]): Choice | null {
+  const t = text.toLowerCase()
+  if (options.length === 1) return options[0]
+  if (t.includes('//') || /\bo\b/.test(t) && !/^dote$|^hab$/.test(t)) return null
+  if (options.includes('energia') && /(\be\b|energ)/.test(t)) return 'energia'
+  if (options.includes('mh') && t.includes('mh')) return 'mh'
+  if (options.includes('stat') && t.includes('stat')) return 'stat'
+  if (options.includes('dote') && t.startsWith('dote')) return 'dote'
+  if (options.includes('hab') && t.startsWith('hab')) return 'hab'
+  return null
+}
+
+interface TreeReport {
+  purchases: number
+  spent: number
+  unknown: string[]
+  gaps: string[]
+  mismatches: string[]
+}
+
+/** Lee las compras de una copia del árbol: lo que está pintado de verde es lo comprado. */
+function readTree(
+  ws: ExcelJS.Worksheet,
+  header: number,
+  character: Character,
+  bp: number,
+  mh: number,
+): { tree: CharacterTree; report: TreeReport } {
+  const purchases: Purchase[] = []
+  const report: TreeReport = { purchases: 0, spent: 0, unknown: [], gaps: [], mismatches: [] }
+  const stamp = new Date().toISOString()
+
+  BRANCHES.forEach((branch, b) => {
+    let gap = false
+    for (const stage of STAGES) {
+      for (let index = 0; index < NODES_PER_STAGE; index++) {
+        const row = header + 1 + (stage - 1) * 11 + index
+        const cell = ws.getCell(row, TREE_COLUMNS[b])
+        const fill = cell.fill as ExcelJS.FillPattern | undefined
+        const green = fill?.type === 'pattern' && fill.fgColor?.argb === GREEN
+        const node = findNode(nodeId(branch, stage, index))
+        if (!green) {
+          // Un nodo de dote o habilidad sin comprar no frena a los de abajo (los jugadores lo eligen después).
+          if (node && !(node.options.includes('dote') && node.options.includes('hab'))) gap = true
+          continue
+        }
+        const text = String(valueOf(cell.value) ?? '').trim()
+        if (!node) {
+          report.mismatches.push(`${branch} etapa ${stage} nodo ${index + 1}: está pintado pero la plantilla no tiene nodo ("${text}")`)
+          continue
+        }
+        if (gap) report.gaps.push(`${branch} etapa ${stage} nodo ${index + 1}: comprado después de un nodo sin comprar`)
+        let choice = choiceFromText(text, node.options)
+        // Dote o habilidad que todavía no se decidió: no suma stats, se deja como habilidad sin nombre.
+        if (choice === null && node.options.includes('dote') && node.options.includes('hab')) choice = 'hab'
+        if (choice === null) {
+          report.unknown.push(`${branch} etapa ${stage} nodo ${index + 1}: "${text}"`)
+          continue
+        }
+        if (/energia/i.test(text) && !node.options.includes('energia')) {
+          report.mismatches.push(`${branch} etapa ${stage} nodo ${index + 1}: la copia dice "${text}" y la plantilla "${node.options.join(' o ')}"`)
+        }
+        purchases.push({
+          nodeId: node.id,
+          branch,
+          stage,
+          index,
+          cost: node.cost,
+          choice,
+          note: choice === 'dote' || choice === 'hab' ? (/^(dote|hab|dote o hab)$/i.test(text) ? '' : text) : '',
+          applied: appliedFor(character, node, choice),
+          at: stamp,
+        })
+      }
+    }
+  })
+
+  report.purchases = purchases.length
+  report.spent = purchases.reduce((sum, p) => sum + p.cost, 0)
+  const dotes = purchases
+    .filter((p) => p.choice === 'dote')
+    .map((p) => ({ id: p.nodeId, name: p.note, description: '', nodeId: p.nodeId }))
+  const stage2 = purchases.some((p) => p.stage >= 2)
+  const stage3 = purchases.some((p) => p.stage >= 3)
+  return {
+    tree: { ...emptyTree(), bp, mh, gates: { stage2, stage3 }, purchases, dotes },
+    report,
+  }
+}
+
+/** Compara lo que suman las compras con las fuentes del personaje. Devuelve las diferencias. */
+function compareTree(character: Character, tree: CharacterTree): string[] {
+  const totals = appliedTotals(tree)
+  const diffs: string[] = []
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01
+  for (const stat of STAT_NAMES) {
+    const src = character.sources[stat]
+    if (!near(src.arbolHeroe, totals.arbolHeroe[stat])) {
+      diffs.push(`${stat} Árbol Héroe: Excel ${src.arbolHeroe} / compras ${totals.arbolHeroe[stat]}`)
+    }
+    if (!near(src.heroe, totals.heroe)) diffs.push(`${stat} Héroe: Excel ${src.heroe} / compras ${totals.heroe}`)
+  }
+  const cat = STAT_NAMES.map((s) => character.sources[s].categoria)
+  if (!cat.every((v) => near(v, totals.categoria))) {
+    diffs.push(`Categoría (Excel por stat ${cat.join(' / ')}) / compras ${totals.categoria} a cada uno`)
+  }
+  if (!near(character.energy.bonusMana, totals.mana)) diffs.push(`bonos de maná: Excel ${character.energy.bonusMana} / compras ${totals.mana}`)
+  if (!near(character.energy.bonusStamina, totals.stamina)) diffs.push(`bonos de estamina: Excel ${character.energy.bonusStamina} / compras ${totals.stamina}`)
+  return diffs
+}
+
 /** Lee una hoja entera como tabla de texto, para consultarla en la app. */
 function readSheetGrid(workbook: ExcelJS.Workbook, name: string): string[][] {
   const ws = workbook.getWorksheet(name)
@@ -293,13 +442,27 @@ async function main() {
   await workbook.xlsx.readFile(input)
   const ws = workbook.getWorksheet('Stats')
   if (!ws) throw new Error('No encontré la hoja "Stats".')
+  const treeSheet = workbook.getWorksheet('Arbol Stats')
 
   const characters: Character[] = []
   let problems = 0
   console.log('\nVerificación contra los valores calculados del Excel:\n')
 
   for (const block of BLOCKS) {
-    const { character, excel } = readCharacter(ws, block)
+    const { character: base, excel } = readCharacter(ws, block)
+    let character = base
+    const treeLines: string[] = []
+    if (treeSheet) {
+      const bp = block.bpColumn ? Number(valueOf(ws.getCell(39, block.bpColumn).value)) || 0 : 0
+      const mh = block.bpColumn ? Number(valueOf(ws.getCell(40, block.bpColumn).value)) || 0 : 0
+      const { tree, report } = readTree(treeSheet, block.treeHeader, base, bp, mh)
+      character = { ...base, tree }
+      treeLines.push(`árbol: ${report.purchases} compras, ${report.spent} BP gastados, ${bp} BP y ${mh} MH disponibles`)
+      for (const t of report.unknown) treeLines.push(`  ? elección sin definir: ${t}`)
+      for (const t of report.gaps) treeLines.push(`  ! ${t}`)
+      for (const t of report.mismatches) treeLines.push(`  ! ${t}`)
+      for (const d of compareTree(base, tree)) treeLines.push(`  ≠ ${d}`)
+    }
     const sheet = characterSheet(character)
     characters.push(character)
 
@@ -322,6 +485,7 @@ async function main() {
     problems += diffs.length
     console.log(`${status}  ${block.name.padEnd(7)} rango ${(sheet.rank?.name ?? '-').padEnd(4)} promedio ${sheet.average.toFixed(1)}  maná ${sheet.mana}  estamina ${sheet.stamina}`)
     for (const d of diffs) console.log(`        - ${d}`)
+    for (const l of treeLines) console.log(`        ${l}`)
   }
 
   const npcs = readNpcs(workbook)

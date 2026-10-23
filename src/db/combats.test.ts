@@ -274,3 +274,18 @@ describe('actualización de la base desde la versión 5', () => {
     upgraded.close()
   })
 })
+
+describe('destino de las potenciaciones', () => {
+  it('devuelve los de fábrica y guarda los cambios sin perder el resto', async () => {
+    const settings = createSettingsRepository(db)
+    const defaults = await settings.getTechniqueTargets()
+    expect(defaults.kyushu).toBe('inteligencia')
+    expect(defaults.ki).toBe('fuerza')
+    expect(defaults.reiatsu).toBe('ofensivo')
+
+    await settings.saveTechniqueTargets({ ...defaults, kyushu: 'sabiduria' })
+    const saved = await settings.getTechniqueTargets()
+    expect(saved.kyushu).toBe('sabiduria')
+    expect(saved.ki).toBe('fuerza')
+  })
+})

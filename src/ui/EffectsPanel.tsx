@@ -2,12 +2,23 @@ import { useState } from 'react'
 import {
   EFFECT_TARGETS,
   SKILL_TYPE_ID,
+  TECHNIQUES,
   addEffect,
   addEffectWithChoice,
   endSkill,
   resolveEffects,
+  resolveTechniqueTarget,
 } from '../rules'
-import type { DurationUnit, Effect, EffectBases, EffectKind, EffectTarget, EffectType } from '../rules'
+import type {
+  DurationUnit,
+  Effect,
+  EffectBases,
+  EffectKind,
+  EffectTarget,
+  EffectType,
+  TechniqueTarget,
+  Techniques,
+} from '../rules'
 import { NumberField, SelectField, TextField } from './fields'
 import { DURATION_LABELS, TARGET_LABELS, describeAmount, describeDuration } from './format'
 
@@ -17,6 +28,12 @@ interface Props {
   types: EffectType[]
   combatId: string
   onChange: (effects: Effect[]) => void
+  /** Valores de las potenciaciones del combatiente (Kyushu, Ki...). Si no se pasan, no se muestra ese bloque. */
+  techniques?: Techniques
+  /** A qué suma cada potenciación. */
+  techniqueTargets?: Record<keyof Techniques, TechniqueTarget>
+  /** Stat ofensivo del combatiente: Fuerza o Destreza. */
+  offensiveStat?: 'fuerza' | 'destreza'
 }
 
 const STATE_LABELS = { activo: 'Activo', pisado: 'Pisado', suspendido: 'Suspendido' } as const
@@ -26,7 +43,16 @@ const DURATION_OPTIONS = (Object.keys(DURATION_LABELS) as DurationUnit[]).map((u
 }))
 const TARGET_OPTIONS = EFFECT_TARGETS.map((t) => ({ value: t, label: TARGET_LABELS[t] }))
 
-export function EffectsPanel({ effects, bases, types, combatId, onChange }: Props) {
+export function EffectsPanel({
+  effects,
+  bases,
+  types,
+  combatId,
+  onChange,
+  techniques,
+  techniqueTargets,
+  offensiveStat = 'destreza',
+}: Props) {
   const [kind, setKind] = useState<EffectKind>('buff')
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState(types[0]?.id ?? SKILL_TYPE_ID)
@@ -37,6 +63,11 @@ export function EffectsPanel({ effects, bases, types, combatId, onChange }: Prop
   const [remaining, setRemaining] = useState(3)
   const [error, setError] = useState('')
   const [pending, setPending] = useState<{ effect: Effect; occupants: Effect[] } | null>(null)
+  const [techKey, setTechKey] = useState<keyof Techniques>('kyushu')
+  const [techTarget, setTechTarget] = useState<EffectTarget | null>(null)
+  const [techType, setTechType] = useState(SKILL_TYPE_ID)
+  const [techUnit, setTechUnit] = useState<DurationUnit>('habilidad')
+  const [techRemaining, setTechRemaining] = useState(3)
 
   const resolved = resolveEffects(effects, bases)
   const typeName = (id: string) => types.find((t) => t.id === id)?.name ?? id
@@ -48,7 +79,7 @@ export function EffectsPanel({ effects, bases, types, combatId, onChange }: Prop
       return setError('La duración debe ser de al menos 1.')
     }
     setError('')
-    const effect: Effect = {
+    submit({
       id: crypto.randomUUID(),
       kind,
       name: name.trim() || typeName(typeId),
@@ -59,7 +90,11 @@ export function EffectsPanel({ effects, bases, types, combatId, onChange }: Prop
       duration: { unit, remaining: unit === 'turnos' || unit === 'rondas' ? remaining : 0 },
       combatId,
       createdAt: new Date().toISOString(),
-    }
+    })
+  }
+
+  /** Agrega el efecto, o pide elegir cuál sacar si ya hay 4 activos sobre ese stat. */
+  function submit(effect: Effect) {
     const result = addEffect(effects, effect, bases)
     if (result.status === 'added') {
       onChange(result.effects)
@@ -67,6 +102,30 @@ export function EffectsPanel({ effects, bases, types, combatId, onChange }: Prop
     } else {
       setPending({ effect, occupants: result.occupants })
     }
+  }
+
+  function applyTechnique() {
+    if (!techniques) return
+    const value = techniques[techKey]
+    const info = TECHNIQUES.find((t) => t.key === techKey)
+    const resolvedTarget =
+      techTarget ?? resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'ofensivo', offensiveStat)
+    setError('')
+    submit({
+      id: crypto.randomUUID(),
+      kind: 'buff',
+      name: info?.name ?? techKey,
+      typeId: techType,
+      target: resolvedTarget,
+      flat: value,
+      percent: 0,
+      duration: {
+        unit: techUnit,
+        remaining: techUnit === 'turnos' || techUnit === 'rondas' ? techRemaining : 0,
+      },
+      combatId,
+      createdAt: new Date().toISOString(),
+    })
   }
 
   function choose(action: 'remove' | 'suspend', id: string) {
@@ -114,7 +173,46 @@ export function EffectsPanel({ effects, bases, types, combatId, onChange }: Prop
         </button>
       )}
 
-      <h2 className="spaced">Agregar</h2>
+      {techniques && (
+        <>
+          <h2 className="spaced">Potenciaciones</h2>
+          <div className="grid-2">
+            <SelectField
+              label="Potenciación"
+              value={techKey}
+              options={TECHNIQUES.map((t) => ({ value: t.key, label: `${t.name} (+${techniques[t.key]})` }))}
+              onChange={(k) => {
+                setTechKey(k)
+                setTechTarget(null)
+              }}
+            />
+            <SelectField
+              label="Suma a"
+              value={techTarget ?? resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'ofensivo', offensiveStat)}
+              options={TARGET_OPTIONS}
+              onChange={setTechTarget}
+            />
+            <SelectField
+              label="Tipo de la potenciación"
+              value={techType}
+              options={types.map((t) => ({ value: t.id, label: t.name }))}
+              onChange={(v) => {
+                setTechType(v)
+                setTechUnit(v === SKILL_TYPE_ID ? 'habilidad' : 'turnos')
+              }}
+            />
+            <SelectField label="La potenciación dura" value={techUnit} options={DURATION_OPTIONS} onChange={setTechUnit} />
+            {(techUnit === 'turnos' || techUnit === 'rondas') && (
+              <NumberField label="Cantidad de la potenciación" integer value={techRemaining} onChange={setTechRemaining} />
+            )}
+          </div>
+          <button className="btn" onClick={applyTechnique}>
+            Aplicar potenciación
+          </button>
+        </>
+      )}
+
+      <h2 className="spaced">Agregar a mano</h2>
       <div className="grid-2">
         <SelectField
           label="Clase"

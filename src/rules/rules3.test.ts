@@ -9,7 +9,7 @@ import {
   tierMultipliers,
 } from './index'
 import { edward } from './fixtures'
-import { TRAINING_TABLE, initialNpcState } from './index'
+import { DEFAULT_TECHNIQUE_TARGETS, TECHNIQUES, TRAINING_TABLE, initialNpcState, resolveTechniqueTarget } from './index'
 import type { Tiers } from './index'
 
 describe('hoja de personaje', () => {
@@ -110,5 +110,18 @@ describe('tablas de la mesa', () => {
 
   it('un NPC entra al combate con la saturación en 0', () => {
     expect(initialNpcState(defaultEnemyProfile('D')).saturation).toBe(0)
+  })
+})
+
+describe('potenciaciones como buff', () => {
+  it('hay un destino por cada potenciación', () => {
+    for (const t of TECHNIQUES) expect(DEFAULT_TECHNIQUE_TARGETS[t.key]).toBeDefined()
+    expect(TECHNIQUES).toHaveLength(10)
+  })
+
+  it('"ofensivo" se resuelve al stat ofensivo del combatiente', () => {
+    expect(resolveTechniqueTarget('ofensivo', 'fuerza')).toBe('fuerza')
+    expect(resolveTechniqueTarget('ofensivo', 'destreza')).toBe('destreza')
+    expect(resolveTechniqueTarget('carisma', 'fuerza')).toBe('carisma')
   })
 })

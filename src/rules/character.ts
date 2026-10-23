@@ -1,4 +1,5 @@
 import type { DerivedConfig, DerivedStats } from './derived'
+import type { CharacterTree } from './tree'
 import { derivedStats } from './derived'
 import { mana, stamina } from './energy'
 import type { Health } from './health'
@@ -30,6 +31,8 @@ export interface Character {
   energy: CharacterEnergy
   derived: DerivedConfig
   baseHealth: Health
+  /** Árbol de stats: compras, BP, MH y dotes. Opcional: los personajes viejos no lo tienen. */
+  tree?: CharacterTree
   createdAt: string
   updatedAt: string
 }

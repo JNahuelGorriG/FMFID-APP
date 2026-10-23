@@ -23,6 +23,8 @@ import type {
   NpcParticipantState,
   Participant,
   PcState,
+  Techniques,
+  TechniqueTarget,
 } from '../rules'
 import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
@@ -40,6 +42,7 @@ interface Props {
 export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
   const combat = useLiveQuery(() => combatRepo.get(combatId), [combatId])
   const types = useLiveQuery(() => settingsRepo.getEffectTypes(), [])
+  const targets = useLiveQuery(() => settingsRepo.getTechniqueTargets(), [])
   const participant = combat?.participants.find((p) => p.id === participantId)
   const characterId = participant?.characterId ?? null
   const character = useLiveQuery(
@@ -47,7 +50,7 @@ export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
     [characterId],
   )
 
-  if (combat === undefined || types === undefined) return <p className="muted">Cargando…</p>
+  if (combat === undefined || types === undefined || targets === undefined) return <p className="muted">Cargando…</p>
   if (!participant) {
     return (
       <section>
@@ -80,12 +83,13 @@ export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
             character={character}
             pc={participant.pc}
             types={types}
+            targets={targets}
           />
         ) : (
           <p className="muted">Cargando…</p>
         )
       ) : participant.npc ? (
-        <NpcPanel combat={combat} participant={participant} npc={participant.npc} types={types} />
+        <NpcPanel combat={combat} participant={participant} npc={participant.npc} types={types} targets={targets} />
       ) : (
         <p className="muted">No hay datos de este participante.</p>
       )}
@@ -141,12 +145,14 @@ function PcPanel({
   character,
   pc,
   types,
+  targets,
 }: {
   combat: Combat
   participantId: string
   character: Character
   pc: PcState
   types: EffectType[]
+  targets: Record<keyof Techniques, TechniqueTarget>
 }) {
   const update = (change: (s: PcState) => PcState) =>
     combatRepo.update(combat.id, (c) =>
@@ -429,6 +435,9 @@ function PcPanel({
         types={types}
         combatId={combat.id}
         onChange={(effects) => void update((s) => ({ ...s, effects }))}
+        techniques={sheet.derived.techniques}
+        techniqueTargets={targets}
+        offensiveStat={character.derived.agilityStat === 'fuerza' ? 'fuerza' : 'destreza'}
       />
 
       <ChangedValues rows={rows} />
@@ -441,11 +450,13 @@ function NpcPanel({
   participant,
   npc,
   types,
+  targets,
 }: {
   combat: Combat
   participant: Participant
   npc: NpcParticipantState
   types: EffectType[]
+  targets: Record<keyof Techniques, TechniqueTarget>
 }) {
   const update = (change: (n: NpcParticipantState) => NpcParticipantState) =>
     combatRepo.update(combat.id, (c) =>
@@ -573,6 +584,9 @@ function NpcPanel({
         types={types}
         combatId={combat.id}
         onChange={(effects) => void update((n) => ({ ...n, effects }))}
+        techniques={view.natural.techniques}
+        techniqueTargets={targets}
+        offensiveStat="destreza"
       />
 
       <ChangedValues rows={rows} />

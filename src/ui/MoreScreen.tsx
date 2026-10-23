@@ -2,9 +2,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import { db, exportBackup, importBackup } from '../db'
 import { SKILL_TYPE_ID } from '../rules'
-import type { EffectType } from '../rules'
+import { EFFECT_TARGETS, TECHNIQUES } from '../rules'
+import type { EffectType, TechniqueTarget, Techniques } from '../rules'
 import { settingsRepo } from './data'
-import { TextField } from './fields'
+import { SelectField, TextField } from './fields'
+import { TARGET_LABELS } from './format'
 
 function EffectTypesEditor() {
   const saved = useLiveQuery(() => settingsRepo.getEffectTypes(), [])
@@ -65,6 +67,55 @@ function EffectTypesEditor() {
           Guardar tipos
         </button>
       </div>
+      {status && (
+        <p className="small" role="status">
+          {status}
+        </p>
+      )}
+    </div>
+  )
+}
+
+const TECHNIQUE_TARGET_OPTIONS: { value: TechniqueTarget; label: string }[] = [
+  { value: 'ofensivo', label: 'Stat ofensivo (Fuerza o Destreza)' },
+  ...EFFECT_TARGETS.map((t) => ({ value: t as TechniqueTarget, label: TARGET_LABELS[t] })),
+]
+
+function TechniqueTargetsEditor() {
+  const saved = useLiveQuery(() => settingsRepo.getTechniqueTargets(), [])
+  const [draft, setDraft] = useState<Record<keyof Techniques, TechniqueTarget> | null>(null)
+  const [status, setStatus] = useState('')
+  const targets = draft ?? saved
+  if (!targets) return null
+
+  return (
+    <div className="card">
+      <h2>Potenciaciones: a qué suman</h2>
+      <p className="muted small">
+        Al aplicar una potenciación como buff, suma su valor a este stat. Puedes cambiarlo en cada uso.
+      </p>
+      {TECHNIQUES.map((t) => (
+        <SelectField
+          key={t.key}
+          label={t.name}
+          value={targets[t.key]}
+          options={TECHNIQUE_TARGET_OPTIONS}
+          onChange={(v) => {
+            setDraft({ ...targets, [t.key]: v })
+            setStatus('')
+          }}
+        />
+      ))}
+      <button
+        className="btn"
+        onClick={async () => {
+          await settingsRepo.saveTechniqueTargets(targets)
+          setDraft(null)
+          setStatus('Guardado.')
+        }}
+      >
+        Guardar
+      </button>
       {status && (
         <p className="small" role="status">
           {status}
@@ -148,6 +199,7 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
         )}
       </div>
       <EffectTypesEditor />
+      <TechniqueTargetsEditor />
     </section>
   )
 }

@@ -1,9 +1,10 @@
 import type { AppDB } from './db'
-import { DEFAULT_EFFECT_TYPES, SKILL_TYPE_ID } from '../rules'
-import type { EffectType } from '../rules'
+import { DEFAULT_EFFECT_TYPES, DEFAULT_TECHNIQUE_TARGETS, SKILL_TYPE_ID } from '../rules'
+import type { EffectType, Techniques, TechniqueTarget } from '../rules'
 
 const EFFECT_TYPES_KEY = 'effectTypes'
 const REFERENCE_SHEETS_KEY = 'referenceSheets'
+const TECHNIQUE_TARGETS_KEY = 'techniqueTargets'
 
 /** Una hoja de referencia importada del Excel (por ejemplo los precios), solo para consultar. */
 export interface ReferenceSheet {
@@ -18,6 +19,17 @@ export function createSettingsRepository(db: AppDB) {
     async getEffectTypes(): Promise<EffectType[]> {
       const row = await db.settings.get(EFFECT_TYPES_KEY)
       return Array.isArray(row?.value) ? (row.value as EffectType[]) : DEFAULT_EFFECT_TYPES
+    },
+
+    /** A qué suma cada potenciación (Kyushu, Ki...). Lo no guardado usa el valor de fábrica. */
+    async getTechniqueTargets(): Promise<Record<keyof Techniques, TechniqueTarget>> {
+      const row = await db.settings.get(TECHNIQUE_TARGETS_KEY)
+      const saved = (row?.value ?? {}) as Partial<Record<keyof Techniques, TechniqueTarget>>
+      return { ...DEFAULT_TECHNIQUE_TARGETS, ...saved }
+    },
+
+    async saveTechniqueTargets(targets: Record<keyof Techniques, TechniqueTarget>): Promise<void> {
+      await db.settings.put({ key: TECHNIQUE_TARGETS_KEY, value: targets })
     },
 
     /** Hojas de referencia importadas (precios, etc.). */
