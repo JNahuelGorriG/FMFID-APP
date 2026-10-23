@@ -313,7 +313,6 @@ async function main() {
     characters,
     changes: [],
     npcs,
-    characterStates: [],
     combats: [],
     settings: [],
   }

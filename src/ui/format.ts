@@ -131,3 +131,46 @@ export function describeAmount(effect: Pick<Effect, 'kind' | 'flat' | 'percent'>
   if (effect.percent !== 0) parts.push(`${sign}${fmt(effect.percent)} %`)
   return parts.join(' y ') || '0'
 }
+
+import type { DifferenceLevel, RollOutcome, Side } from '../rules'
+
+export const LEVEL_LABELS: Record<DifferenceLevel, string> = {
+  'exito-asegurado': 'Éxito asegurado',
+  'mayor-plus': 'Mayor+',
+  mayor: 'Mayor',
+  normal: 'Normal',
+  menor: 'Menor',
+  'menor-plus': 'Menor+',
+  'fallo-inmune': 'Fallo inmune',
+}
+
+export const OUTCOME_LABELS: Record<RollOutcome | 'fallo-automatico' | 'exito-automatico', string> = {
+  'fallo-critico': 'Fallo crítico',
+  'fallo-mayor': 'Fallo mayor',
+  fallo: 'Fallo',
+  exito: 'Éxito',
+  'exito-mayor': 'Éxito mayor',
+  'exito-critico': 'Éxito crítico',
+  'fallo-automatico': 'Fallo automático',
+  'exito-automatico': 'Éxito automático',
+}
+
+export const SIDE_LABELS: Record<Side, string> = {
+  jugador: 'Jugador',
+  aliado: 'Aliado',
+  enemigo: 'Enemigo',
+}
+
+/** Rango del d20 como texto: "1-2" o "20". */
+export function rangeText(range: readonly [number, number]): string {
+  return range[0] === range[1] ? String(range[0]) : `${range[0]}-${range[1]}`
+}
+
+/** Heridas como texto: "1 medio + 2 leves". */
+export function woundsText(w: { leve: number; medio: number; letal: number }): string {
+  const parts: string[] = []
+  if (w.letal) parts.push(`${w.letal} letal${w.letal > 1 ? 'es' : ''}`)
+  if (w.medio) parts.push(`${w.medio} medio${w.medio > 1 ? 's' : ''}`)
+  if (w.leve) parts.push(`${w.leve} leve${w.leve > 1 ? 's' : ''}`)
+  return parts.join(' + ') || 'Sin daño'
+}

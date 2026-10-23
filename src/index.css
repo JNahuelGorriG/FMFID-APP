@@ -199,3 +199,24 @@ details[open] > summary { margin-bottom: 8px; }
 .spaced { margin-top: 14px; }
 .kv-between { display: flex; justify-content: space-between; gap: 12px; }
 .kv-between dd { text-align: right; }
+
+.tabs { display: flex; gap: 6px; overflow-x: auto; margin: 6px 0 12px; padding-bottom: 4px; }
+.tab {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.picks { display: grid; gap: 2px; }
+.table-wrap { overflow-x: auto; padding: 8px; }
+.cmp { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.cmp th, .cmp td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.cmp thead th { text-align: right; color: var(--accent-soft); }
+.cmp tbody th { text-align: left; color: var(--muted); font-weight: 500; position: sticky; left: 0; background: var(--card); }
+.cmp td.max { color: var(--accent-soft); font-weight: 700; }
+.cmp td.min { color: var(--muted); }
+.result { font-weight: 700; color: var(--accent-soft); margin: 6px 0; }

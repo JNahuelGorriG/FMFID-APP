@@ -51,10 +51,10 @@ export type RollOutcome =
 
 export type AutomaticOutcome = 'fallo-automatico' | 'exito-automatico'
 
-type Range = readonly [number, number]
+export type Range = readonly [number, number]
 
 /** Rangos del d20 en el orden: fallo crítico, fallo mayor, fallo, éxito, éxito mayor, éxito crítico. */
-const OUTCOME_ORDER: readonly RollOutcome[] = [
+export const OUTCOME_ORDER: readonly RollOutcome[] = [
   'fallo-critico',
   'fallo-mayor',
   'fallo',

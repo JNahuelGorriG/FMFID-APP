@@ -1,0 +1,279 @@
+import { useState } from 'react'
+import {
+  STAT_NAMES,
+  SUGGESTED_NPC_POINTS,
+  addAlert,
+  applyToNpc,
+  applyToPc,
+  damageStage,
+  hitCheck,
+  isHit,
+  recordAction,
+  resistanceResult,
+  resolveHit,
+  undoLastAction,
+  updateParticipant,
+  woundsForPc,
+} from '../../rules'
+import type { AttackType, Combat, Profile, StatName } from '../../rules'
+import { D20_RANGES, OUTCOME_ORDER } from '../../rules'
+import { combatRepo } from '../data'
+import { NumberField, OptionalNumberField, SelectField } from '../fields'
+import { LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, woundsText } from '../format'
+
+const STAT_OPTIONS = STAT_NAMES.map((s) => ({ value: s, label: STAT_LABELS[s] }))
+const TYPE_OPTIONS: { value: AttackType; label: string }[] = [
+  { value: 'fisico', label: 'Físico' },
+  { value: 'magico', label: 'Mágico' },
+]
+const DEFAULT_STATS: Record<AttackType, [StatName, StatName]> = {
+  fisico: ['destreza', 'percepcion'],
+  magico: ['inteligencia', 'sabiduria'],
+}
+
+const validRoll = (n: number | undefined, max: number): n is number =>
+  n !== undefined && Number.isInteger(n) && n >= 1 && n <= max
+
+export function AttackView({ combat, profiles }: { combat: Combat; profiles: Profile[] }) {
+  const activeProfile = profiles.find((p) => p.participantId === combat.activeId)
+  const [attackerId, setAttackerId] = useState(activeProfile?.participantId ?? '')
+  const [defenderId, setDefenderId] = useState('')
+  const [type, setType] = useState<AttackType>('fisico')
+  const [attackerStat, setAttackerStat] = useState<StatName>('destreza')
+  const [defenderStat, setDefenderStat] = useState<StatName>('percepcion')
+  const [d20, setD20] = useState<number | undefined>(undefined)
+  const [force, setForce] = useState(false)
+  const [damage, setDamage] = useState<number | undefined>(undefined)
+  const [defense, setDefense] = useState<number | undefined>(undefined)
+  const [d8, setD8] = useState<number | undefined>(undefined)
+  const [d6, setD6] = useState<number | undefined>(undefined)
+  const [points, setPoints] = useState<number | undefined>(undefined)
+  const [message, setMessage] = useState('')
+
+  const attacker = profiles.find((p) => p.participantId === attackerId) ?? profiles[0]
+  const defender =
+    profiles.find((p) => p.participantId === defenderId && p.participantId !== attacker?.participantId) ??
+    profiles.find((p) => p.participantId !== attacker?.participantId)
+
+  if (!attacker || !defender) {
+    return <p className="muted small">Hacen falta al menos dos participantes para resolver un ataque.</p>
+  }
+
+  const check = hitCheck(attacker, defender, attackerStat, defenderStat)
+  const auto = check.level === 'fallo-inmune' || check.level === 'exito-asegurado'
+  const rolled = validRoll(d20, 20) ? d20 : undefined
+  const outcome = auto ? resolveHit(check.level) : rolled !== undefined ? resolveHit(check.level, rolled) : null
+  const hit = outcome === null ? null : isHit(outcome)
+  const canDamage = hit === true || force
+
+  const stage = damageStage(attacker, defender, type, { damage, defense })
+  const isPc = defender.kind === 'pc'
+
+  let resistance: number | null = null
+  let resistanceError = ''
+  if (isPc) {
+    if (!validRoll(d8, 8)) resistanceError = 'Falta el d8 de resistencia.'
+    else {
+      try {
+        resistance = resistanceResult(d8, d6)
+      } catch {
+        resistanceError = 'Con un 1 u 8 en el d8 hace falta un d6.'
+      }
+    }
+  }
+  const wounds = resistance !== null ? woundsForPc(stage.applied, resistance) : null
+  const npcPoints = points ?? SUGGESTED_NPC_POINTS[stage.applied]
+
+  const lastAction = combat.history[0]
+
+  function reset() {
+    setD20(undefined)
+    setForce(false)
+    setDamage(undefined)
+    setDefense(undefined)
+    setD8(undefined)
+    setD6(undefined)
+    setPoints(undefined)
+    setMessage('')
+  }
+
+  function chooseType(next: AttackType) {
+    setType(next)
+    setAttackerStat(DEFAULT_STATS[next][0])
+    setDefenderStat(DEFAULT_STATS[next][1])
+    setDamage(undefined)
+    setDefense(undefined)
+  }
+
+  async function registerMiss() {
+    const text = `${attacker.name} falla contra ${defender?.name}${outcome ? ` (${OUTCOME_LABELS[outcome]})` : ''}.`
+    await combatRepo.update(combat.id, (c) => addAlert(c, text))
+    reset()
+  }
+
+  async function confirm() {
+    if (!defender) return
+    if (isPc && (resistance === null || wounds === null)) return setMessage(resistanceError)
+    setMessage('')
+    const result = outcome ? OUTCOME_LABELS[outcome] : 'Impacto'
+    const text = isPc
+      ? `${attacker.name} → ${defender.name}: ${result} · ${woundsText(wounds ?? { leve: 0, medio: 0, letal: 0 })}`
+      : `${attacker.name} → ${defender.name}: ${result} · −${npcPoints} de vida`
+    await combatRepo.update(combat.id, (c) => {
+      const target = c.participants.find((p) => p.id === defender.participantId)
+      if (!target) return c
+      let next = recordAction(c, text, target)
+      next = updateParticipant(next, target.id, (p) => {
+        if (p.pc && wounds) return { ...p, pc: applyToPc(p.pc, wounds, stage.armorSpent) }
+        if (p.npc) return { ...p, npc: applyToNpc(p.npc, npcPoints) }
+        return p
+      })
+      return addAlert(next, text)
+    })
+    reset()
+  }
+
+  return (
+    <>
+      <div className="card">
+        <h2>Quién ataca a quién</h2>
+        <div className="grid-2">
+          <SelectField
+            label="Atacante"
+            value={attacker.participantId}
+            options={profiles.map((p) => ({ value: p.participantId, label: p.name }))}
+            onChange={(id) => {
+              setAttackerId(id)
+              reset()
+            }}
+          />
+          <SelectField
+            label="Defensor"
+            value={defender.participantId}
+            options={profiles
+              .filter((p) => p.participantId !== attacker.participantId)
+              .map((p) => ({ value: p.participantId, label: p.name }))}
+            onChange={(id) => {
+              setDefenderId(id)
+              reset()
+            }}
+          />
+          <SelectField label="Tipo de ataque" value={type} options={TYPE_OPTIONS} onChange={chooseType} />
+          <span />
+          <SelectField label="Stat del atacante" value={attackerStat} options={STAT_OPTIONS} onChange={setAttackerStat} />
+          <SelectField label="Stat del defensor" value={defenderStat} options={STAT_OPTIONS} onChange={setDefenderStat} />
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Impacto</h2>
+        <p className="small">
+          {attacker.name} {STAT_LABELS[attackerStat]} <strong>{fmt(check.attackerValue)}</strong> contra{' '}
+          {defender.name} {STAT_LABELS[defenderStat]} <strong>{fmt(check.defenderValue)}</strong>
+        </p>
+        <p className="small">
+          Diferencia {check.difference >= 0 ? '+' : ''}
+          {fmt(check.difference)} · nivel <strong>{LEVEL_LABELS[check.level]}</strong>
+        </p>
+        {auto ? (
+          <p className="muted small">Sin tirada: resultado automático.</p>
+        ) : (
+          <p className="muted small">
+            {OUTCOME_ORDER.map((o, i) => `${OUTCOME_LABELS[o]} ${rangeText(D20_RANGES[check.level as keyof typeof D20_RANGES][i])}`).join(' · ')}
+          </p>
+        )}
+        {!auto && <OptionalNumberField label="Tirada del atacante (d20)" value={d20} onChange={setD20} />}
+        {outcome && <p className="result">{OUTCOME_LABELS[outcome]}</p>}
+        {hit === false && (
+          <>
+            <label className="check">
+              <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+              Aplicar daño igual
+            </label>
+            {!force && (
+              <button className="btn secondary" onClick={() => void registerMiss()}>
+                Registrar fallo
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {canDamage && (
+        <div className="card">
+          <h2>Daño</h2>
+          <div className="grid-2">
+            <OptionalNumberField
+              label="Daño"
+              value={damage}
+              placeholder={fmt(attacker.damage[type])}
+              onChange={setDamage}
+            />
+            <OptionalNumberField
+              label="Defensa"
+              value={defense}
+              placeholder={fmt(stage.defense)}
+              onChange={setDefense}
+            />
+          </div>
+          <p className="small">
+            Daño <strong>{fmt(stage.damage)}</strong> contra defensa <strong>{fmt(stage.defense)}</strong>
+            {stage.armored ? ' (con armadura)' : ' (sin armadura)'}: herida <strong>{stage.category}</strong>
+            {stage.armored && stage.armorSpent > 0 && (
+              <>
+                {' '}
+                → la armadura la baja a <strong>{stage.applied}</strong> y gasta {stage.armorSpent} uso(s)
+              </>
+            )}
+            .
+          </p>
+
+          {isPc ? (
+            <>
+              <div className="grid-2">
+                <OptionalNumberField label="d8 de resistencia" value={d8} onChange={setD8} />
+                {(d8 === 1 || d8 === 8) && <OptionalNumberField label="d6 adicional" value={d6} onChange={setD6} />}
+              </div>
+              {resistance !== null && wounds ? (
+                <p className="result">
+                  Resistencia {resistance} → {woundsText(wounds)}
+                </p>
+              ) : (
+                <p className="muted small">{resistanceError}</p>
+              )}
+              {defender.kind === 'pc' && <p className="muted small">Si tiene barrera, absorbe primero.</p>}
+            </>
+          ) : (
+            <>
+              <NumberField
+                label="Puntos de vida a descontar"
+                integer
+                value={npcPoints}
+                onChange={(v) => setPoints(Math.max(0, v))}
+              />
+              <p className="muted small">Sugerido por la herida: {SUGGESTED_NPC_POINTS[stage.applied]}. Lo decides tú.</p>
+            </>
+          )}
+
+          {message && (
+            <p className="errors" role="alert">
+              {message}
+            </p>
+          )}
+          <button className="btn" onClick={() => void confirm()}>
+            Confirmar y aplicar
+          </button>
+        </div>
+      )}
+
+      {lastAction && (
+        <div className="card">
+          <p className="small">Último ataque: {lastAction.text}</p>
+          <button className="btn secondary" onClick={() => void combatRepo.update(combat.id, undoLastAction)}>
+            Deshacer último ataque
+          </button>
+        </div>
+      )}
+    </>
+  )
+}

@@ -1,7 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import {
+  RANKS,
   STAT_NAMES,
+  armorFromTable,
   batteryGainFromRoll,
   chargeBattery,
   claimSaveFromBattery,
@@ -9,19 +11,22 @@ import {
   effectiveEnemy,
   naturalBases,
   removeParticipant,
+  updateParticipant,
 } from '../rules'
 import type {
+  ArmorType,
   Character,
-  CharacterState,
+  Combat,
   DurationUnit,
   EffectType,
   NpcParticipantState,
   Participant,
+  PcState,
 } from '../rules'
 import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
 import { NumberField, SelectField, Stepper } from './fields'
-import { STAT_LABELS, fmt, describeDuration } from './format'
+import { STAT_LABELS, describeDuration, fmt } from './format'
 
 interface Props {
   combatId: string
@@ -30,16 +35,16 @@ interface Props {
 }
 
 export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
-  const world = useLiveQuery(() => combatRepo.loadWorld(combatId), [combatId])
+  const combat = useLiveQuery(() => combatRepo.get(combatId), [combatId])
   const types = useLiveQuery(() => settingsRepo.getEffectTypes(), [])
-  const participant = world?.combat.participants.find((p) => p.id === participantId)
+  const participant = combat?.participants.find((p) => p.id === participantId)
   const characterId = participant?.characterId ?? null
   const character = useLiveQuery(
     () => (characterId ? repo.get(characterId) : Promise.resolve(undefined)),
     [characterId],
   )
 
-  if (world === undefined || types === undefined) return <p className="muted">Cargando…</p>
+  if (combat === undefined || types === undefined) return <p className="muted">Cargando…</p>
   if (!participant) {
     return (
       <section>
@@ -51,7 +56,7 @@ export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
 
   async function remove() {
     if (!participant || !window.confirm(`¿Quitar a ${participant.name} del combate?`)) return
-    await combatRepo.update(combatId, (w) => ({ ...w, combat: removeParticipant(w.combat, participantId) }))
+    await combatRepo.update(combatId, (c) => removeParticipant(c, participantId))
     onBack()
   }
 
@@ -64,19 +69,20 @@ export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
         <h1 className="tight grow">{participant.name}</h1>
       </header>
 
-      {participant.kind === 'pc' && characterId && world.states[characterId] ? (
+      {participant.pc ? (
         character ? (
           <PcPanel
-            combatId={combatId}
+            combat={combat}
+            participantId={participantId}
             character={character}
-            state={world.states[characterId]}
+            pc={participant.pc}
             types={types}
           />
         ) : (
           <p className="muted">Cargando…</p>
         )
       ) : participant.npc ? (
-        <NpcPanel combatId={combatId} participant={participant} npc={participant.npc} types={types} />
+        <NpcPanel combat={combat} participant={participant} npc={participant.npc} types={types} />
       ) : (
         <p className="muted">No hay datos de este participante.</p>
       )}
@@ -93,6 +99,13 @@ const BARRIER_UNITS: { value: DurationUnit; label: string }[] = [
   { value: 'rondas', label: 'Rondas' },
   { value: 'manual', label: 'Hasta que se agote' },
 ]
+
+const ARMOR_OPTIONS: { value: ArmorType; label: string }[] = [
+  { value: 'ligera', label: 'Ligera' },
+  { value: 'mediana', label: 'Mediana' },
+  { value: 'pesada', label: 'Pesada' },
+]
+const RANK_OPTIONS = RANKS.map((r) => ({ value: r.name, label: r.name }))
 
 function ChangedValues({ rows }: { rows: [string, number, number][] }) {
   if (rows.length === 0) return null
@@ -115,26 +128,28 @@ function ChangedValues({ rows }: { rows: [string, number, number][] }) {
 }
 
 function PcPanel({
-  combatId,
+  combat,
+  participantId,
   character,
-  state,
+  pc,
   types,
 }: {
-  combatId: string
+  combat: Combat
+  participantId: string
   character: Character
-  state: CharacterState
+  pc: PcState
   types: EffectType[]
 }) {
-  const update = (change: (s: CharacterState) => CharacterState) =>
-    combatRepo.update(combatId, (w) => ({
-      ...w,
-      states: { ...w.states, [state.characterId]: change(w.states[state.characterId]) },
-    }))
+  const update = (change: (s: PcState) => PcState) =>
+    combatRepo.update(combat.id, (c) =>
+      updateParticipant(c, participantId, (p) => (p.pc ? { ...p, pc: change(p.pc) } : p)),
+    )
 
-  const view = effectiveCharacter(character, state.effects)
+  const view = effectiveCharacter(character, pc.effects)
   const sheet = view.natural
   const bases = naturalBases(sheet.totals, sheet.derived)
   const base = character.baseHealth
+  const state = pc
 
   const [bLeve, setBLeve] = useState(0)
   const [bMedio, setBMedio] = useState(0)
@@ -171,7 +186,7 @@ function PcPanel({
           id: crypto.randomUUID(),
           wounds: { leve: bLeve, medio: bMedio, letal: bLetal },
           duration: { unit: bUnit, remaining: bUnit === 'manual' ? 0 : bRemaining },
-          combatId,
+          combatId: combat.id,
           createdAt: new Date().toISOString(),
         },
       ],
@@ -211,6 +226,76 @@ function PcPanel({
           ))}
         </div>
         {state.health.letal === 0 && <p className="errors">Sin heridas letales: estado crítico.</p>}
+      </div>
+
+      <div className="card">
+        <h2>Armadura</h2>
+        {state.armor ? (
+          <>
+            <div className="grid-2">
+              <SelectField
+                label="Tipo de armadura"
+                value={state.armor.type}
+                options={ARMOR_OPTIONS}
+                onChange={(type) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, type } : s.armor }))}
+              />
+              <SelectField
+                label="Rango de la armadura"
+                value={state.armor.rank}
+                options={RANK_OPTIONS}
+                onChange={(rank) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, rank } : s.armor }))}
+              />
+              <NumberField
+                label="Valor que suma a la defensa"
+                value={state.armor.bonus}
+                onChange={(bonus) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, bonus } : s.armor }))}
+              />
+              <NumberField
+                label="Usos máximos"
+                integer
+                value={state.armor.usesMax}
+                onChange={(usesMax) =>
+                  void update((s) => ({
+                    ...s,
+                    armor: s.armor ? { ...s.armor, usesMax, usesLeft: Math.min(s.armor.usesLeft, usesMax) } : s.armor,
+                  }))
+                }
+              />
+            </div>
+            <Stepper
+              label="Usos restantes"
+              value={state.armor.usesLeft}
+              max={state.armor.usesMax}
+              onChange={(usesLeft) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, usesLeft } : s.armor }))}
+            />
+            <div className="actions">
+              <button
+                className="btn secondary compact"
+                onClick={() =>
+                  void update((s) => ({ ...s, armor: s.armor ? armorFromTable(s.armor.type, s.armor.rank) : s.armor }))
+                }
+              >
+                Cargar valores de la tabla
+              </button>
+              <button className="btn secondary compact" onClick={() => void update((s) => ({ ...s, armor: null }))}>
+                Sacar armadura
+              </button>
+            </div>
+            <p className="muted small">
+              Con armadura y usos, la defensa es la CA más este valor. Sin armadura, cuenta la defensa natural SA.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="muted small">Sin armadura puesta: cuenta la defensa natural SA.</p>
+            <button
+              className="btn secondary"
+              onClick={() => void update((s) => ({ ...s, armor: armorFromTable('ligera', sheet.rank?.name ?? 'E') }))}
+            >
+              Poner armadura
+            </button>
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -319,7 +404,7 @@ function PcPanel({
         effects={state.effects}
         bases={bases}
         types={types}
-        combatId={combatId}
+        combatId={combat.id}
         onChange={(effects) => void update((s) => ({ ...s, effects }))}
       />
 
@@ -329,26 +414,20 @@ function PcPanel({
 }
 
 function NpcPanel({
-  combatId,
+  combat,
   participant,
   npc,
   types,
 }: {
-  combatId: string
+  combat: Combat
   participant: Participant
   npc: NpcParticipantState
   types: EffectType[]
 }) {
   const update = (change: (n: NpcParticipantState) => NpcParticipantState) =>
-    combatRepo.update(combatId, (w) => ({
-      ...w,
-      combat: {
-        ...w.combat,
-        participants: w.combat.participants.map((p) =>
-          p.id === participant.id && p.npc ? { ...p, npc: change(p.npc) } : p,
-        ),
-      },
-    }))
+    combatRepo.update(combat.id, (c) =>
+      updateParticipant(c, participant.id, (p) => (p.npc ? { ...p, npc: change(p.npc) } : p)),
+    )
 
   const view = effectiveEnemy(npc.profile, npc.effects)
   const bases = naturalBases(view.natural.stats, view.natural)
@@ -383,7 +462,7 @@ function NpcPanel({
           id: crypto.randomUUID(),
           points,
           duration: { unit, remaining: unit === 'manual' ? 0 : remaining },
-          combatId,
+          combatId: combat.id,
           createdAt: new Date().toISOString(),
         },
       ],
@@ -405,7 +484,9 @@ function NpcPanel({
             label="Vida máxima"
             integer
             value={npc.hpMax}
-            onChange={(v) => void update((n) => ({ ...n, hpMax: Math.max(0, v), hpCurrent: Math.min(n.hpCurrent, Math.max(0, v)) }))}
+            onChange={(v) =>
+              void update((n) => ({ ...n, hpMax: Math.max(0, v), hpCurrent: Math.min(n.hpCurrent, Math.max(0, v)) }))
+            }
           />
         </div>
         {npc.hpCurrent === 0 && <p className="errors">Sin vida.</p>}
@@ -433,14 +514,16 @@ function NpcPanel({
         <div className="grid-2">
           <NumberField label="Barrera: puntos" integer value={points} onChange={setPoints} />
           <SelectField label="Barrera dura" value={unit} options={BARRIER_UNITS} onChange={setUnit} />
-          {unit !== 'manual' && (
-            <NumberField label="Barrera: cantidad" integer value={remaining} onChange={setRemaining} />
-          )}
+          {unit !== 'manual' && <NumberField label="Barrera: cantidad" integer value={remaining} onChange={setRemaining} />}
         </div>
         <button className="btn secondary" onClick={addBarrier}>
           Agregar barrera
         </button>
-        {message && <p className="errors" role="alert">{message}</p>}
+        {message && (
+          <p className="errors" role="alert">
+            {message}
+          </p>
+        )}
       </div>
 
       <div className="card stats" aria-label="Stats del NPC en combate">
@@ -459,7 +542,7 @@ function NpcPanel({
         effects={npc.effects}
         bases={bases}
         types={types}
-        combatId={combatId}
+        combatId={combat.id}
         onChange={(effects) => void update((n) => ({ ...n, effects }))}
       />
 

@@ -1,10 +1,14 @@
 import { tickDurations } from './durations'
 import type { Effect } from './effects'
 import type { EnemyProfile } from './enemy'
-import { initialNpcState } from './state'
-import type { CharacterState, NpcParticipantState } from './state'
+import type { Character } from './character'
+import { initialNpcState, initialPcState } from './state'
+import type { NpcParticipantState, PcState } from './state'
 
 export type CombatStatus = 'activo' | 'pausado' | 'terminado'
+
+/** Bando: los jugadores son siempre "jugador". Los NPC pueden ser aliados o enemigos. */
+export type Side = 'jugador' | 'aliado' | 'enemigo'
 
 export interface Participant {
   id: string
@@ -12,9 +16,12 @@ export interface Participant {
   /** Personaje al que representa (solo jugadores). */
   characterId: string | null
   name: string
+  side: Side
   /** Tirada de iniciativa. Sin tirada, va al final. */
   initiative: number | null
-  /** Estado del NPC (solo NPCs). Los jugadores usan su estado vivo. */
+  /** Estado del jugador en este combate (solo jugadores). */
+  pc: PcState | null
+  /** Estado del NPC en este combate (solo NPCs). */
   npc: NpcParticipantState | null
 }
 
@@ -23,7 +30,19 @@ export interface Alert {
   text: string
 }
 
-/** Un campo de batalla. Puede haber varios a la vez, cada uno con su iniciativa y su ronda. */
+/** Un ataque aplicado, con lo necesario para deshacerlo. */
+export interface ActionLog {
+  id: string
+  text: string
+  participantId: string
+  /** El participante afectado tal como estaba antes. */
+  before: Participant
+}
+
+/**
+ * Un campo de batalla. Puede haber varios a la vez, cada uno con su iniciativa, su ronda
+ * y el estado propio de cada participante.
+ */
 export interface Combat {
   id: string
   name: string
@@ -33,17 +52,13 @@ export interface Combat {
   activeId: string | null
   participants: Participant[]
   alerts: Alert[]
+  history: ActionLog[]
   createdAt: string
   updatedAt: string
 }
 
-/** Un combate junto con los estados vivos de los jugadores que participan. */
-export interface World {
-  combat: Combat
-  states: Record<string, CharacterState>
-}
-
 const MAX_ALERTS = 30
+const MAX_HISTORY = 10
 
 export function newCombat(name: string): Combat {
   const stamp = new Date().toISOString()
@@ -55,6 +70,7 @@ export function newCombat(name: string): Combat {
     activeId: null,
     participants: [],
     alerts: [],
+    history: [],
     createdAt: stamp,
     updatedAt: stamp,
   }
@@ -72,16 +88,22 @@ export function orderedParticipants(participants: Participant[]): Participant[] 
     .map(({ p }) => p)
 }
 
-export function addPcParticipant(
-  combat: Combat,
-  character: { id: string; name: string },
-  initiative: number | null,
-): Combat {
+/** Agrega un jugador con su estado inicial propio para este combate. */
+export function addPcParticipant(combat: Combat, character: Character, initiative: number | null): Combat {
   return {
     ...combat,
     participants: [
       ...combat.participants,
-      { id: crypto.randomUUID(), kind: 'pc', characterId: character.id, name: character.name, initiative, npc: null },
+      {
+        id: crypto.randomUUID(),
+        kind: 'pc',
+        characterId: character.id,
+        name: character.name,
+        side: 'jugador',
+        initiative,
+        pc: initialPcState(character),
+        npc: null,
+      },
     ],
   }
 }
@@ -90,6 +112,7 @@ export function addNpcParticipant(
   combat: Combat,
   npc: { name: string; profile: EnemyProfile },
   initiative: number | null,
+  side: Side = 'enemigo',
 ): Combat {
   return {
     ...combat,
@@ -100,18 +123,33 @@ export function addNpcParticipant(
         kind: 'npc',
         characterId: null,
         name: npc.name,
+        side: side === 'jugador' ? 'enemigo' : side,
         initiative,
+        pc: null,
         npc: initialNpcState(npc.profile),
       },
     ],
   }
 }
 
-export function setInitiative(combat: Combat, participantId: string, initiative: number | null): Combat {
+export function updateParticipant(
+  combat: Combat,
+  participantId: string,
+  change: (p: Participant) => Participant,
+): Combat {
   return {
     ...combat,
-    participants: combat.participants.map((p) => (p.id === participantId ? { ...p, initiative } : p)),
+    participants: combat.participants.map((p) => (p.id === participantId ? change(p) : p)),
   }
+}
+
+export function setInitiative(combat: Combat, participantId: string, initiative: number | null): Combat {
+  return updateParticipant(combat, participantId, (p) => ({ ...p, initiative }))
+}
+
+/** Marca a un NPC como aliado o enemigo. Los jugadores siempre son "jugador". */
+export function setSide(combat: Combat, participantId: string, side: 'aliado' | 'enemigo'): Combat {
+  return updateParticipant(combat, participantId, (p) => (p.kind === 'npc' ? { ...p, side } : p))
 }
 
 /** Quita a un participante. Si era su turno, pasa al siguiente en el orden. */
@@ -126,6 +164,7 @@ export function removeParticipant(combat: Combat, participantId: string): Combat
     ...combat,
     activeId,
     participants: combat.participants.filter((p) => p.id !== participantId),
+    history: combat.history.filter((h) => h.participantId !== participantId),
   }
 }
 
@@ -135,72 +174,74 @@ function pushAlerts(combat: Combat, texts: string[]): Combat {
   return { ...combat, alerts: [...added.reverse(), ...combat.alerts].slice(0, MAX_ALERTS) }
 }
 
+/** Agrega un aviso al combate. */
+export function addAlert(combat: Combat, text: string): Combat {
+  return pushAlerts(combat, [text])
+}
+
 export function dismissAlert(combat: Combat, alertId: string): Combat {
   return { ...combat, alerts: combat.alerts.filter((a) => a.id !== alertId) }
 }
 
-/** Baja las duraciones de un participante y avisa lo que terminó. */
-function tickParticipant(world: World, participant: Participant, unit: 'turnos' | 'rondas'): World {
-  const combatId = world.combat.id
-  const texts: string[] = []
-  let { combat, states } = world
-
-  if (participant.kind === 'pc' && participant.characterId) {
-    const state = states[participant.characterId]
-    if (state) {
-      const effects = tickDurations<Effect>(state.effects, unit, combatId)
-      const barriers = tickDurations(state.barriers, unit, combatId)
-      effects.expired.forEach((e) =>
-        texts.push(`Se terminó el ${e.kind === 'buff' ? 'buff' : 'debuff'} "${e.name}" de ${participant.name}.`),
-      )
-      barriers.expired.forEach(() => texts.push(`Se terminó una barrera de ${participant.name}.`))
-      states = {
-        ...states,
-        [participant.characterId]: { ...state, effects: effects.items, barriers: barriers.items },
-      }
-    }
-  } else if (participant.npc) {
-    const effects = tickDurations<Effect>(participant.npc.effects, unit, combatId)
-    const barriers = tickDurations(participant.npc.barriers, unit, combatId)
-    effects.expired.forEach((e) =>
-      texts.push(`Se terminó el ${e.kind === 'buff' ? 'buff' : 'debuff'} "${e.name}" de ${participant.name}.`),
-    )
-    barriers.expired.forEach(() => texts.push(`Se terminó una barrera de ${participant.name}.`))
-    combat = {
-      ...combat,
-      participants: combat.participants.map((p) =>
-        p.id === participant.id && p.npc
-          ? { ...p, npc: { ...p.npc, effects: effects.items, barriers: barriers.items } }
-          : p,
-      ),
-    }
-  }
-
-  return { combat: pushAlerts(combat, texts), states }
+/** Anota un cambio hecho a un participante para poder deshacerlo. */
+export function recordAction(combat: Combat, text: string, before: Participant): Combat {
+  const entry: ActionLog = { id: crypto.randomUUID(), text, participantId: before.id, before }
+  return { ...combat, history: [entry, ...combat.history].slice(0, MAX_HISTORY) }
 }
 
-function startRound(world: World, round: number, tick: boolean): World {
-  let w: World = { ...world, combat: { ...world.combat, round } }
-  const order = orderedParticipants(w.combat.participants)
-  if (tick) for (const p of order) w = tickParticipant(w, p, 'rondas')
-  const first = order[0]?.id ?? null
+/** Deshace la última acción registrada: el participante vuelve a como estaba. */
+export function undoLastAction(combat: Combat): Combat {
+  const [last, ...rest] = combat.history
+  if (!last) return combat
+  const exists = combat.participants.some((p) => p.id === last.participantId)
   return {
-    ...w,
-    combat: pushAlerts({ ...w.combat, activeId: first }, [`Inicio de la ronda ${round}.`]),
+    ...(exists ? updateParticipant(combat, last.participantId, () => last.before) : combat),
+    history: rest,
   }
+}
+
+const effectLabel = (e: Effect): string => (e.kind === 'buff' ? 'buff' : 'debuff')
+
+/** Baja las duraciones de un participante y avisa lo que terminó. */
+function tickParticipant(combat: Combat, participant: Participant, unit: 'turnos' | 'rondas'): Combat {
+  const texts: string[] = []
+  const who = participant.name
+  let next = combat
+
+  if (participant.pc) {
+    const effects = tickDurations<Effect>(participant.pc.effects, unit, combat.id)
+    const barriers = tickDurations(participant.pc.barriers, unit, combat.id)
+    effects.expired.forEach((e) => texts.push(`Se terminó el ${effectLabel(e)} "${e.name}" de ${who}.`))
+    barriers.expired.forEach(() => texts.push(`Se terminó una barrera de ${who}.`))
+    next = updateParticipant(next, participant.id, (p) =>
+      p.pc ? { ...p, pc: { ...p.pc, effects: effects.items, barriers: barriers.items } } : p,
+    )
+  } else if (participant.npc) {
+    const effects = tickDurations<Effect>(participant.npc.effects, unit, combat.id)
+    const barriers = tickDurations(participant.npc.barriers, unit, combat.id)
+    effects.expired.forEach((e) => texts.push(`Se terminó el ${effectLabel(e)} "${e.name}" de ${who}.`))
+    barriers.expired.forEach(() => texts.push(`Se terminó una barrera de ${who}.`))
+    next = updateParticipant(next, participant.id, (p) =>
+      p.npc ? { ...p, npc: { ...p.npc, effects: effects.items, barriers: barriers.items } } : p,
+    )
+  }
+  return pushAlerts(next, texts)
+}
+
+function startRound(combat: Combat, round: number, tick: boolean): Combat {
+  let next: Combat = { ...combat, round }
+  const order = orderedParticipants(next.participants)
+  if (tick) for (const p of order) next = tickParticipant(next, p, 'rondas')
+  return pushAlerts({ ...next, activeId: order[0]?.id ?? null }, [`Inicio de la ronda ${round}.`])
 }
 
 /** Empieza el combate: ronda 1 y turno del primero en el orden. */
-export function startCombat(world: World): World {
-  const first = orderedParticipants(world.combat.participants)[0]
-  if (!first) return world
-  return {
-    ...world,
-    combat: pushAlerts(
-      { ...world.combat, round: 1, activeId: first.id },
-      [`Empieza el combate. Turno de ${first.name}.`],
-    ),
-  }
+export function startCombat(combat: Combat): Combat {
+  const first = orderedParticipants(combat.participants)[0]
+  if (!first) return combat
+  return pushAlerts({ ...combat, round: 1, activeId: first.id }, [
+    `Empieza el combate. Turno de ${first.name}.`,
+  ])
 }
 
 export interface AdvanceOptions {
@@ -213,23 +254,23 @@ export interface AdvanceOptions {
  * Al terminar su turno, al afectado le bajan las duraciones "en turnos". Al empezar una ronda
  * le bajan a todos las duraciones "en rondas".
  */
-export function advanceTurn(world: World, options: AdvanceOptions): World {
-  const order = orderedParticipants(world.combat.participants)
-  if (order.length === 0) return world
+export function advanceTurn(combat: Combat, options: AdvanceOptions): Combat {
+  const order = orderedParticipants(combat.participants)
+  if (order.length === 0) return combat
 
-  const index = order.findIndex((p) => p.id === world.combat.activeId)
-  if (world.combat.activeId === null || index === -1) return startCombat(world)
+  const index = order.findIndex((p) => p.id === combat.activeId)
+  if (combat.activeId === null || index === -1) return startCombat(combat)
 
-  let w = world
-  if (options.tickDurations) w = tickParticipant(w, order[index], 'turnos')
+  let next = combat
+  if (options.tickDurations) next = tickParticipant(next, order[index], 'turnos')
 
-  const next = order[index + 1]
-  if (next) return { ...w, combat: { ...w.combat, activeId: next.id } }
-  return startRound(w, w.combat.round + 1, options.tickDurations)
+  const following = order[index + 1]
+  if (following) return { ...next, activeId: following.id }
+  return startRound(next, next.round + 1, options.tickDurations)
 }
 
 /** Salta directo a la ronda siguiente (turno del primero), sin cerrar el turno actual. */
-export function advanceRound(world: World, options: AdvanceOptions): World {
-  if (world.combat.participants.length === 0) return world
-  return startRound(world, world.combat.round + 1, options.tickDurations)
+export function advanceRound(combat: Combat, options: AdvanceOptions): Combat {
+  if (combat.participants.length === 0) return combat
+  return startRound(combat, combat.round + 1, options.tickDurations)
 }

@@ -10,6 +10,10 @@ import {
   addPcParticipant,
   advanceRound,
   advanceTurn,
+  recordAction,
+  setSide,
+  undoLastAction,
+  updateParticipant,
   batteryGainFromRoll,
   chargeBattery,
   claimSaveFromBattery,
@@ -19,7 +23,6 @@ import {
   effectiveCharacter,
   effectiveEnemy,
   endSkill,
-  initialState,
   naturalBases,
   newCombat,
   orderedParticipants,
@@ -31,7 +34,7 @@ import {
   tickDurations,
   characterSheet,
 } from './index'
-import type { Effect, EffectBases, World } from './index'
+import type { Combat, Effect, EffectBases } from './index'
 import { edward } from './fixtures'
 
 const bases: EffectBases = {
@@ -303,139 +306,143 @@ describe('salvaciones y batería', () => {
 })
 
 describe('combate: orden, turnos y rondas', () => {
-  const colt = { id: 'colt', name: 'Colt' }
-  const roy = { id: 'roy', name: 'Roy' }
+  const colt = { ...edward, id: 'colt', name: 'Colt' }
+  const roy = { ...edward, id: 'roy', name: 'Roy' }
 
-  function world(): World {
-    let combat = newCombat('Camino del norte')
-    combat = addPcParticipant(combat, colt, 15)
-    combat = addPcParticipant(combat, roy, 22)
-    combat = addNpcParticipant(combat, { name: 'Goblin 1', profile: defaultEnemyProfile('D') }, 22)
-    combat = addNpcParticipant(combat, { name: 'Goblin 2', profile: defaultEnemyProfile('D') }, null)
-    const states = {
-      colt: initialState({ ...edward, id: 'colt' }),
-      roy: initialState({ ...edward, id: 'roy' }),
-    }
-    return { combat, states }
+  function combat(): Combat {
+    let c = newCombat('Camino del norte')
+    c = addPcParticipant(c, colt, 15)
+    c = addPcParticipant(c, roy, 22)
+    c = addNpcParticipant(c, { name: 'Goblin 1', profile: defaultEnemyProfile('D') }, 22)
+    c = addNpcParticipant(c, { name: 'Goblin 2', profile: defaultEnemyProfile('D') }, null)
+    return c
   }
 
+  const withPcEffects = (c: Combat, name: string, effects: Effect[]): Combat =>
+    updateParticipant(c, c.participants.find((p) => p.name === name)!.id, (p) => ({
+      ...p,
+      pc: p.pc ? { ...p.pc, effects } : null,
+    }))
+
   it('ordena por iniciativa; los empates siguen el orden de carga y sin tirada va al final', () => {
-    expect(orderedParticipants(world().combat.participants).map((p) => p.name)).toEqual([
+    expect(orderedParticipants(combat().participants).map((p) => p.name)).toEqual([
       'Roy', 'Goblin 1', 'Colt', 'Goblin 2',
     ])
   })
 
   it('cambiar la iniciativa reordena', () => {
-    const w = world()
-    const goblin2 = w.combat.participants[3]
-    const combat = setInitiative(w.combat, goblin2.id, 30)
-    expect(orderedParticipants(combat.participants)[0].name).toBe('Goblin 2')
+    const c = combat()
+    const goblin2 = c.participants[3]
+    expect(orderedParticipants(setInitiative(c, goblin2.id, 30).participants)[0].name).toBe('Goblin 2')
+  })
+
+  it('los jugadores son "jugador" y los NPC enemigos por defecto, pudiendo marcarse aliados', () => {
+    let c = combat()
+    expect(c.participants.map((p) => p.side)).toEqual(['jugador', 'jugador', 'enemigo', 'enemigo'])
+    c = setSide(c, c.participants[2].id, 'aliado')
+    expect(c.participants[2].side).toBe('aliado')
+    c = setSide(c, c.participants[0].id, 'enemigo') // un jugador no cambia de bando
+    expect(c.participants[0].side).toBe('jugador')
   })
 
   it('empieza en ronda 1 con el primero y avisa', () => {
-    const w = startCombat(world())
-    expect(w.combat.round).toBe(1)
-    expect(orderedParticipants(w.combat.participants)[0].id).toBe(w.combat.activeId)
-    expect(w.combat.alerts[0].text).toContain('Turno de Roy')
+    const c = startCombat(combat())
+    expect(c.round).toBe(1)
+    expect(orderedParticipants(c.participants)[0].id).toBe(c.activeId)
+    expect(c.alerts[0].text).toContain('Turno de Roy')
   })
 
   it('avanza turno a turno y, al terminar el último, inicia una ronda nueva con aviso', () => {
-    let w = startCombat(world())
-    for (let i = 0; i < 3; i++) w = advanceTurn(w, { tickDurations: true })
-    expect(w.combat.round).toBe(1)
-    expect(w.combat.activeId).toBe(w.combat.participants[3].id) // Goblin 2, el último
+    let c = startCombat(combat())
+    for (let i = 0; i < 3; i++) c = advanceTurn(c, { tickDurations: true })
+    expect(c.round).toBe(1)
+    expect(c.activeId).toBe(c.participants[3].id) // Goblin 2, el último
 
-    w = advanceTurn(w, { tickDurations: true })
-    expect(w.combat.round).toBe(2)
-    expect(w.combat.alerts[0].text).toBe('Inicio de la ronda 2.')
-    expect(orderedParticipants(w.combat.participants)[0].id).toBe(w.combat.activeId)
+    c = advanceTurn(c, { tickDurations: true })
+    expect(c.round).toBe(2)
+    expect(c.alerts[0].text).toBe('Inicio de la ronda 2.')
+    expect(orderedParticipants(c.participants)[0].id).toBe(c.activeId)
   })
 
   it('las duraciones en turnos bajan al terminar el turno del afectado y avisan', () => {
-    let w = startCombat(world())
-    const roy = w.states.roy
-    w = {
-      ...w,
-      states: {
-        ...w.states,
-        roy: {
-          ...roy,
-          effects: [fx({ name: 'Furia', duration: { unit: 'turnos', remaining: 1 }, combatId: w.combat.id })],
-        },
-      },
-    }
-    // Roy es el primero: al terminar su turno, su buff llega a 0
-    w = advanceTurn(w, { tickDurations: true })
-    expect(w.states.roy.effects).toEqual([])
-    expect(w.combat.alerts.some((a) => a.text.includes('Se terminó el buff "Furia" de Roy'))).toBe(true)
+    let c = startCombat(combat())
+    c = withPcEffects(c, 'Roy', [fx({ name: 'Furia', duration: { unit: 'turnos', remaining: 1 }, combatId: c.id })])
+    c = advanceTurn(c, { tickDurations: true }) // Roy es el primero
+    expect(c.participants.find((p) => p.name === 'Roy')?.pc?.effects).toEqual([])
+    expect(c.alerts.some((a) => a.text.includes('Se terminó el buff "Furia" de Roy'))).toBe(true)
   })
 
   it('con "sin bajar duraciones" nada vence', () => {
-    let w = startCombat(world())
-    w = {
-      ...w,
-      states: {
-        ...w.states,
-        roy: { ...w.states.roy, effects: [fx({ duration: { unit: 'turnos', remaining: 1 }, combatId: w.combat.id })] },
-      },
-    }
-    w = advanceTurn(w, { tickDurations: false })
-    expect(w.states.roy.effects).toHaveLength(1)
+    let c = startCombat(combat())
+    c = withPcEffects(c, 'Roy', [fx({ duration: { unit: 'turnos', remaining: 1 }, combatId: c.id })])
+    c = advanceTurn(c, { tickDurations: false })
+    expect(c.participants.find((p) => p.name === 'Roy')?.pc?.effects).toHaveLength(1)
   })
 
   it('las duraciones en rondas bajan en cada ronda nueva, también en los NPC', () => {
-    let w = startCombat(world())
-    const g = w.combat.participants[2]
-    w = {
-      ...w,
-      combat: {
-        ...w.combat,
-        participants: w.combat.participants.map((p) =>
-          p.id === g.id && p.npc
-            ? { ...p, npc: { ...p.npc, effects: [fx({ kind: 'debuff', name: 'Veneno', duration: { unit: 'rondas', remaining: 1 }, combatId: w.combat.id })] } }
-            : p,
-        ),
-      },
-    }
-    w = advanceRound(w, { tickDurations: true })
-    expect(w.combat.round).toBe(2)
-    expect(w.combat.participants[2].npc?.effects).toEqual([])
-    expect(w.combat.alerts.some((a) => a.text.includes('Se terminó el debuff "Veneno" de Goblin 1'))).toBe(true)
+    let c = startCombat(combat())
+    const g = c.participants[2]
+    c = updateParticipant(c, g.id, (p) => ({
+      ...p,
+      npc: p.npc
+        ? { ...p.npc, effects: [fx({ kind: 'debuff', name: 'Veneno', duration: { unit: 'rondas', remaining: 1 }, combatId: c.id })] }
+        : null,
+    }))
+    c = advanceRound(c, { tickDurations: true })
+    expect(c.round).toBe(2)
+    expect(c.participants[2].npc?.effects).toEqual([])
+    expect(c.alerts.some((a) => a.text.includes('Se terminó el debuff "Veneno" de Goblin 1'))).toBe(true)
   })
 
   it('un efecto de otro combate no baja', () => {
-    let w = startCombat(world())
-    w = {
-      ...w,
-      states: {
-        ...w.states,
-        roy: { ...w.states.roy, effects: [fx({ duration: { unit: 'turnos', remaining: 1 }, combatId: 'otro-combate' })] },
-      },
-    }
-    w = advanceTurn(w, { tickDurations: true })
-    expect(w.states.roy.effects).toHaveLength(1)
+    let c = startCombat(combat())
+    c = withPcEffects(c, 'Roy', [fx({ duration: { unit: 'turnos', remaining: 1 }, combatId: 'otro-combate' })])
+    c = advanceTurn(c, { tickDurations: true })
+    expect(c.participants.find((p) => p.name === 'Roy')?.pc?.effects).toHaveLength(1)
   })
 
-  it('un mismo personaje puede estar en dos combates a la vez', () => {
-    const a = addPcParticipant(newCombat('Frente'), colt, 10)
-    const b = addPcParticipant(newCombat('Aldea'), colt, 12)
-    expect(a.id).not.toBe(b.id)
-    expect(a.participants[0].characterId).toBe(b.participants[0].characterId)
+  it('un mismo personaje en dos combates tiene estados separados', () => {
+    const a = addPcParticipant(newCombat('Principal'), colt, 10)
+    const b = addPcParticipant(newCombat('Alterna'), colt, 12)
+    const hurt = updateParticipant(a, a.participants[0].id, (p) => ({
+      ...p,
+      pc: p.pc ? { ...p.pc, health: { leve: 1, medio: 0, letal: 1 } } : null,
+    }))
+    expect(hurt.participants[0].pc?.health).toEqual({ leve: 1, medio: 0, letal: 1 })
+    expect(b.participants[0].pc?.health).toEqual(edward.baseHealth)
   })
 
   it('quitar al que tiene el turno pasa el turno al siguiente', () => {
-    const w = startCombat(world())
-    const combat = removeParticipant(w.combat, w.combat.activeId as string)
-    expect(combat.participants).toHaveLength(3)
-    expect(combat.participants.some((p) => p.id === combat.activeId)).toBe(true)
-    expect(combat.participants.find((p) => p.id === combat.activeId)?.name).toBe('Goblin 1')
+    const c0 = startCombat(combat())
+    const c = removeParticipant(c0, c0.activeId as string)
+    expect(c.participants).toHaveLength(3)
+    expect(c.participants.find((p) => p.id === c.activeId)?.name).toBe('Goblin 1')
   })
 
   it('el NPC en combate es una copia: cambiar su vida no toca el original', () => {
     const profile = defaultEnemyProfile('D')
-    const combat = addNpcParticipant(newCombat('x'), { name: 'Goblin', profile }, 5)
-    const p = combat.participants[0]
-    expect(p.npc?.hpMax).toBe(profile.hp.max)
-    expect(p.npc?.profile).not.toBe(profile)
+    const c = addNpcParticipant(newCombat('x'), { name: 'Goblin', profile }, 5)
+    expect(c.participants[0].npc?.hpMax).toBe(profile.hp.max)
+    expect(c.participants[0].npc?.profile).not.toBe(profile)
+  })
+
+  it('deshacer devuelve al participante a como estaba y quita la acción del historial', () => {
+    let c = combat()
+    const target = c.participants[2]
+    c = recordAction(c, 'Colt → Goblin 1', target)
+    c = updateParticipant(c, target.id, (p) => ({ ...p, npc: p.npc ? { ...p.npc, hpCurrent: 1 } : null }))
+    expect(c.participants[2].npc?.hpCurrent).toBe(1)
+
+    c = undoLastAction(c)
+    expect(c.participants[2].npc?.hpCurrent).toBe(target.npc?.hpCurrent)
+    expect(c.history).toEqual([])
+    expect(undoLastAction(c)).toBe(c) // sin nada que deshacer
+  })
+
+  it('el historial guarda las últimas 10 acciones', () => {
+    let c = combat()
+    for (let i = 0; i < 12; i++) c = recordAction(c, `acción ${i}`, c.participants[0])
+    expect(c.history).toHaveLength(10)
+    expect(c.history[0].text).toBe('acción 11')
   })
 })

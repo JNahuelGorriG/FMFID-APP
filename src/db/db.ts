@@ -1,6 +1,8 @@
 import Dexie from 'dexie'
 import type { EntityTable } from 'dexie'
-import type { Character, CharacterState, Combat, Npc } from '../rules'
+import type { Character, Combat, Npc } from '../rules'
+import { migrateCombat } from './migrations'
+import type { LegacyCombat, LegacyState } from './migrations'
 
 /** Registro de cada cambio de un dato de un personaje. */
 export interface ChangeRecord {
@@ -24,7 +26,6 @@ export class AppDB extends Dexie {
   characters!: EntityTable<Character, 'id'>
   changes!: EntityTable<ChangeRecord, 'id'>
   npcs!: EntityTable<Npc, 'id'>
-  characterStates!: EntityTable<CharacterState, 'characterId'>
   combats!: EntityTable<Combat, 'id'>
   settings!: EntityTable<Setting, 'key'>
 
@@ -39,7 +40,6 @@ export class AppDB extends Dexie {
       changes: 'id, characterId, at',
       npcs: 'id, name, rank, realm, guild, race',
     })
-    // Versión 3: estado vivo de los personajes, combates y ajustes. Las bases viejas se actualizan solas.
     this.version(3).stores({
       characters: 'id, name, playerName, retired',
       changes: 'id, characterId, at',
@@ -48,6 +48,23 @@ export class AppDB extends Dexie {
       combats: 'id, status, updatedAt',
       settings: 'key',
     })
+    // Versión 4: cada combate guarda el estado propio de sus participantes. Los combates de la
+    // versión 3 se convierten y la tabla de estados globales se elimina.
+    this.version(4)
+      .stores({
+        characters: 'id, name, playerName, retired',
+        changes: 'id, characterId, at',
+        npcs: 'id, name, rank, realm, guild, race',
+        characterStates: null,
+        combats: 'id, status, updatedAt',
+        settings: 'key',
+      })
+      .upgrade(async (tx) => {
+        const characters: Character[] = await tx.table('characters').toArray()
+        const states: LegacyState[] = await tx.table('characterStates').toArray()
+        const combats: LegacyCombat[] = await tx.table('combats').toArray()
+        await tx.table('combats').bulkPut(combats.map((c) => migrateCombat(c, characters, states)))
+      })
   }
 }
 

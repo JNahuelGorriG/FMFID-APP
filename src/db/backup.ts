@@ -1,7 +1,9 @@
 import type { AppDB, ChangeRecord, Setting } from './db'
-import type { Character, CharacterState, Combat, Npc } from '../rules'
+import { migrateCombat } from './migrations'
+import type { LegacyCombat, LegacyState } from './migrations'
+import type { Character, Combat, Npc } from '../rules'
 
-export const BACKUP_VERSION = 3
+export const BACKUP_VERSION = 4
 
 export interface BackupFile {
   app: 'fmfid-app'
@@ -10,17 +12,15 @@ export interface BackupFile {
   characters: Character[]
   changes: ChangeRecord[]
   npcs: Npc[]
-  characterStates: CharacterState[]
   combats: Combat[]
   settings: Setting[]
 }
 
 export async function exportBackup(db: AppDB): Promise<BackupFile> {
-  const [characters, changes, npcs, characterStates, combats, settings] = await Promise.all([
+  const [characters, changes, npcs, combats, settings] = await Promise.all([
     db.characters.toArray(),
     db.changes.toArray(),
     db.npcs.toArray(),
-    db.characterStates.toArray(),
     db.combats.toArray(),
     db.settings.toArray(),
   ])
@@ -31,7 +31,6 @@ export async function exportBackup(db: AppDB): Promise<BackupFile> {
     characters,
     changes,
     npcs,
-    characterStates,
     combats,
     settings,
   }
@@ -39,7 +38,7 @@ export async function exportBackup(db: AppDB): Promise<BackupFile> {
 
 const OPTIONAL_LISTS = ['npcs', 'characterStates', 'combats', 'settings'] as const
 
-function isBackup(data: unknown): data is BackupFile {
+function isBackup(data: unknown): data is BackupFile & { characterStates?: LegacyState[] } {
   if (data === null || typeof data !== 'object') return false
   const d = data as Record<string, unknown>
   return (
@@ -53,31 +52,28 @@ function isBackup(data: unknown): data is BackupFile {
 
 /**
  * Reemplaza todos los datos por los del respaldo. Valida el archivo antes de tocar nada.
- * Los respaldos de versiones anteriores (sin NPCs, combates, etc.) también se aceptan.
+ * Los respaldos de versiones anteriores también se aceptan: sus combates se convierten.
  */
 export async function importBackup(db: AppDB, data: unknown): Promise<void> {
   if (!isBackup(data)) throw new Error('El archivo no es un respaldo de FMFID APP.')
   if (data.version > BACKUP_VERSION) {
     throw new Error('El respaldo es de una versión más nueva de la app.')
   }
-  await db.transaction(
-    'rw',
-    [db.characters, db.changes, db.npcs, db.characterStates, db.combats, db.settings],
-    async () => {
-      await Promise.all([
-        db.characters.clear(),
-        db.changes.clear(),
-        db.npcs.clear(),
-        db.characterStates.clear(),
-        db.combats.clear(),
-        db.settings.clear(),
-      ])
-      await db.characters.bulkAdd(data.characters)
-      await db.changes.bulkAdd(data.changes)
-      await db.npcs.bulkAdd(data.npcs ?? [])
-      await db.characterStates.bulkAdd(data.characterStates ?? [])
-      await db.combats.bulkAdd(data.combats ?? [])
-      await db.settings.bulkAdd(data.settings ?? [])
-    },
+  const combats = ((data.combats ?? []) as unknown as LegacyCombat[]).map((c) =>
+    migrateCombat(c, data.characters, data.characterStates ?? []),
   )
+  await db.transaction('rw', [db.characters, db.changes, db.npcs, db.combats, db.settings], async () => {
+    await Promise.all([
+      db.characters.clear(),
+      db.changes.clear(),
+      db.npcs.clear(),
+      db.combats.clear(),
+      db.settings.clear(),
+    ])
+    await db.characters.bulkAdd(data.characters)
+    await db.changes.bulkAdd(data.changes)
+    await db.npcs.bulkAdd(data.npcs ?? [])
+    await db.combats.bulkAdd(combats)
+    await db.settings.bulkAdd(data.settings ?? [])
+  })
 }

@@ -6,37 +6,58 @@ import type { Saves } from './saves'
 import { defaultSaves } from './saves'
 import type { Character } from './character'
 import { characterSheet } from './character'
+import { armorBonus, armorUses } from './equipment'
+import type { ArmorType } from './equipment'
+import { RANKS } from './ranks'
 
 export interface EnergyPools {
   natural: number
   renovable: number
 }
 
+/** Armadura puesta de un jugador en un combate, con sus usos. */
+export interface ArmorState {
+  type: ArmorType
+  /** Rango de la armadura (E a SSS+). */
+  rank: string
+  /** Valor que suma a la defensa CA (física y mágica). Lo puede poner el GM a mano. */
+  bonus: number
+  usesMax: number
+  usesLeft: number
+}
+
+/** Arma una armadura con los valores de las tablas (bono y usos). Fuera del rango E-S los usos quedan en 0. */
+export function armorFromTable(type: ArmorType, rank: string): ArmorState {
+  const found = RANKS.find((r) => r.name === rank) ?? RANKS[0]
+  const uses = armorUses(found.name, type)?.total ?? 0
+  return { type, rank: found.name, bonus: armorBonus(found, type), usesMax: uses, usesLeft: uses }
+}
+
 /**
- * Estado vivo de un personaje: lo que cambia durante la campaña. Se guarda aparte
- * del personaje y es el mismo sin importar en cuántos combates participe.
+ * Estado de un jugador dentro de UN combate. Cada combate tiene el suyo: lo que pasa en
+ * un campo de batalla no afecta a otro.
  */
-export interface CharacterState {
-  characterId: string
+export interface PcState {
   health: Health
   barriers: PcBarrier[]
   mana: EnergyPools
   stamina: EnergyPools
   saves: Saves
   effects: Effect[]
+  armor: ArmorState | null
 }
 
-/** Estado inicial: vida y energías llenas. */
-export function initialState(character: Character): CharacterState {
+/** Estado inicial al entrar a un combate: vida y energías llenas, sin armadura puesta. */
+export function initialPcState(character: Character): PcState {
   const sheet = characterSheet(character)
   return {
-    characterId: character.id,
     health: { ...character.baseHealth },
     barriers: [],
     mana: { natural: sheet.mana / 2, renovable: sheet.mana / 2 },
     stamina: { natural: sheet.stamina / 2, renovable: sheet.stamina / 2 },
     saves: defaultSaves(),
     effects: [],
+    armor: null,
   }
 }
 
