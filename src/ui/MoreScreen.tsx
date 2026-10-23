@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
-import { db, exportBackup, importBackup } from '../db'
+import { db, exportBackup, importBackup, importFromExcel } from '../db'
 import { SKILL_TYPE_ID } from '../rules'
 import { EFFECT_TARGETS, TECHNIQUES } from '../rules'
 import type { EffectType, TechniqueTarget, Techniques } from '../rules'
@@ -143,17 +143,32 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
     setMessage(`Respaldo exportado: ${backup.characters.length} personajes.`)
   }
 
-  async function handleImport(file: File) {
+  const importMode = useRef<'completo' | 'excel'>('completo')
+
+  async function handleImport(file: File, mode: 'completo' | 'excel') {
     const ok = window.confirm(
-      'Importar reemplaza todos los datos de este dispositivo por los del archivo. ¿Continuar?',
+      mode === 'completo'
+        ? 'Importar reemplaza TODOS los datos de este dispositivo (personajes, NPCs, combates y ajustes) por los del archivo. ¿Continuar?'
+        : 'Se actualizan los personajes, NPCs y precios con los datos del archivo. Se conservan tus combates, el historial y lo que hayas creado en la app. ¿Continuar?',
     )
     if (!ok) return
     try {
-      await importBackup(db, JSON.parse(await file.text()))
-      setMessage('Respaldo importado.')
+      const data = JSON.parse(await file.text())
+      if (mode === 'completo') {
+        await importBackup(db, data)
+        setMessage('Respaldo importado.')
+      } else {
+        const r = await importFromExcel(db, data)
+        setMessage(`Actualizado: ${r.characters} personajes y ${r.npcs} NPCs${r.referenceSheets ? ', con precios' : ''}.`)
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo importar el archivo.')
     }
+  }
+
+  function pickFile(mode: 'completo' | 'excel') {
+    importMode.current = mode
+    fileInput.current?.click()
   }
 
   return (
@@ -173,14 +188,18 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
       <div className="card">
         <h2>Respaldo</h2>
         <p className="muted small">
-          Los datos viven solo en este teléfono. Exporta un respaldo de vez en cuando.
+          Los datos viven solo en este dispositivo. Exporta un respaldo de vez en cuando.
+          "Actualizar desde el Excel" carga el archivo que genera el importador sin borrar tus combates.
         </p>
         <div className="actions">
           <button className="btn" onClick={handleExport}>
             Exportar respaldo
           </button>
-          <button className="btn secondary" onClick={() => fileInput.current?.click()}>
-            Importar respaldo
+          <button className="btn secondary" onClick={() => pickFile('completo')}>
+            Importar respaldo completo
+          </button>
+          <button className="btn secondary" onClick={() => pickFile('excel')}>
+            Actualizar desde el Excel
           </button>
         </div>
         <input
@@ -190,7 +209,7 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0]
-            if (file) void handleImport(file)
+            if (file) void handleImport(file, importMode.current)
             e.target.value = ''
           }}
         />

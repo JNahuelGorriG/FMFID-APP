@@ -9,6 +9,7 @@ import {
   createSettingsRepository,
   exportBackup,
   importBackup,
+  importFromExcel,
   migrateCombat,
 } from './index'
 import {
@@ -18,6 +19,7 @@ import {
   advanceTurn,
   defaultEnemyProfile,
   newCombat,
+  newNpcTemplate,
   startCombat,
   updateParticipant,
 } from '../rules'
@@ -288,3 +290,75 @@ describe('destino de las potenciaciones', () => {
     expect(saved.ki).toBe('preguntar')
   })
 })
+
+describe('actualizar desde el Excel', () => {
+  const excelFile = (over: object = {}) => ({
+    app: 'fmfid-app', version: 6, exportedAt: '', changes: [], combats: [], npcs: [], settings: [],
+    characters: [], ...over,
+  })
+
+  it('actualiza al personaje por nombre, sin perder su identidad, su historial ni los combates', async () => {
+    const repo = createRepository(db)
+    const char = await repo.create({ ...edwardData, className: 'Boxeador', playerName: 'Mauro' })
+    await repo.setValue(char.id, 'energy.bonusMana', 111, 'prueba')
+    const combat = await combats.create('Frente')
+    await combats.update(combat.id, (x) => addPcParticipant(x, char, 5))
+
+    const fromExcel = {
+      ...edward, id: 'otro-id', className: '', playerName: '',
+      sources: { ...edward.sources, fuerza: { ...edward.sources.fuerza, entrenamiento: 99 } },
+    }
+    const result = await importFromExcel(db, excelFile({ characters: [fromExcel] }))
+
+    expect(result.characters).toBe(1)
+    const updated = (await repo.list())[0]
+    expect(updated.id).toBe(char.id) // misma identidad
+    expect(updated.sources.fuerza.entrenamiento).toBe(99) // datos del Excel
+    expect(updated.className).toBe('Boxeador') // lo que el Excel trae vacío se conserva
+    expect(updated.playerName).toBe('Mauro')
+    expect(await repo.list({ includeRetired: true })).toHaveLength(1)
+    expect(await repo.history(char.id)).toHaveLength(1) // historial intacto
+    const saved = await combats.get(combat.id)
+    expect(saved?.participants[0].characterId).toBe(char.id) // el combate sigue apuntando a él
+  })
+
+  it('agrega los personajes y NPCs nuevos', async () => {
+    const result = await importFromExcel(
+      db,
+      excelFile({ characters: [{ ...edward, id: 'e1', name: 'Nuevo' }], npcs: [{ ...newNpcFile('Alice') }] }),
+    )
+    expect(result).toEqual({ characters: 1, npcs: 1, referenceSheets: false })
+    expect(await db.characters.count()).toBe(1)
+    expect(await db.npcs.count()).toBe(1)
+  })
+
+  it('el NPC conserva su perfil de combate y su tipo si el Excel no trae perfil', async () => {
+    await db.npcs.add({ ...newNpcFile('Lobo'), id: 'n1', kind: 'bestia', combat: defaultEnemyProfile('C') })
+    await importFromExcel(db, excelFile({ npcs: [{ ...newNpcFile('Lobo'), id: 'x', role: 'Cazador', kind: 'npc', combat: null }] }))
+    const lobo = await db.npcs.get('n1')
+    expect(lobo?.role).toBe('Cazador') // dato del Excel
+    expect(lobo?.kind).toBe('bestia')
+    expect(lobo?.combat?.rank).toBe('C')
+    expect(await db.npcs.count()).toBe(1)
+  })
+
+  it('no toca los combates ni los ajustes y reemplaza los precios', async () => {
+    await combats.create('Aldea')
+    await createSettingsRepository(db).saveEffectTypes([...DEFAULT_EFFECT_TYPES, { id: 'x', name: 'Otro' }])
+    await importFromExcel(
+      db,
+      excelFile({ settings: [{ key: 'referenceSheets', value: [{ id: 'precios', title: 'Precios', rows: [['S+']] }] }] }),
+    )
+    expect(await db.combats.count()).toBe(1)
+    expect((await createSettingsRepository(db).getEffectTypes()).at(-1)?.id).toBe('x')
+    expect((await createSettingsRepository(db).getReferenceSheets())[0].rows).toEqual([['S+']])
+  })
+
+  it('rechaza archivos que no son un respaldo', async () => {
+    await expect(importFromExcel(db, { hola: 1 })).rejects.toThrow()
+  })
+})
+
+function newNpcFile(name: string) {
+  return { ...newNpcTemplate(), id: `id-${name}`, name, createdAt: '', updatedAt: '' }
+}

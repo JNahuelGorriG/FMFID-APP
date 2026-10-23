@@ -275,7 +275,13 @@ interface ExcelCheck {
   stamina: number
 }
 
-const GREEN = 'FFC4D79B'
+/** Dos verdes que se usaron para marcar lo comprado. */
+const GREENS = ['FFC4D79B', 'FFB6D7A8']
+
+/** Elecciones que la hoja deja ambiguas y el GM ya confirmó. */
+const CONFIRMED_CHOICES: Record<string, Choice> = {
+  'Hernán:fuerza:1:3': 'mh',
+}
 const TREE_COLUMNS = [5, 8, 11, 14, 17, 20, 23, 26, 29]
 
 /** Lo que dice la celda de una opción elegida, pasado a elección. null si todavía muestra las dos opciones. */
@@ -318,7 +324,7 @@ function readTree(
         const row = header + 1 + (stage - 1) * 11 + index
         const cell = ws.getCell(row, TREE_COLUMNS[b])
         const fill = cell.fill as ExcelJS.FillPattern | undefined
-        const green = fill?.type === 'pattern' && fill.fgColor?.argb === GREEN
+        const green = fill?.type === 'pattern' && GREENS.includes(fill.fgColor?.argb ?? '')
         const node = findNode(nodeId(branch, stage, index))
         if (!green) {
           // Un nodo de dote o habilidad sin comprar no frena a los de abajo (los jugadores lo eligen después).
@@ -331,7 +337,7 @@ function readTree(
           continue
         }
         if (gap) report.gaps.push(`${branch} etapa ${stage} nodo ${index + 1}: comprado después de un nodo sin comprar`)
-        let choice = choiceFromText(text, node.options)
+        let choice = CONFIRMED_CHOICES[`${character.name}:${node.id}`] ?? choiceFromText(text, node.options)
         // Dote o habilidad que todavía no se decidió: no suma stats, se deja como habilidad sin nombre.
         if (choice === null && node.options.includes('dote') && node.options.includes('hab')) choice = 'hab'
         if (choice === null) {
