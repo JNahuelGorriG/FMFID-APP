@@ -2,7 +2,7 @@ import { absorbPointBarriers, absorbWithBarriers } from './barriers'
 import { applyWounds } from './health'
 import { differenceLevel, resolveHit } from './hit'
 import type { AutomaticOutcome, DifferenceLevel, RollOutcome } from './hit'
-import { defenseAgainst } from './profile'
+import { armorActive, defenseAgainst } from './profile'
 import type { AttackType, Profile } from './profile'
 import type { NpcParticipantState, PcState } from './state'
 import type { StatName } from './types'
@@ -53,6 +53,8 @@ export interface DamageStage {
 /**
  * Etapa de daño: el daño del atacante contra la defensa del defensor decide la categoría de
  * herida (con la fila del rango del defensor), y la armadura la baja un nivel.
+ * `type` es el tipo de daño del ataque. La defensa que participa es la del mismo tipo salvo que se
+ * indique otra (`defenseType`): por ejemplo, daño físico contra la defensa mágica.
  * Se puede pasar un daño o defensa a mano para corregir los calculados.
  */
 export function damageStage(
@@ -60,14 +62,20 @@ export function damageStage(
   defender: Profile,
   type: AttackType,
   override: { damage?: number; defense?: number } = {},
+  defenseType: AttackType = type,
 ): DamageStage {
   const damage = override.damage ?? attacker.damage[type]
-  const base = defenseAgainst(defender, type)
+  const base = defenseAgainst(defender, defenseType)
   const defense = override.defense ?? base.value
   const category = woundCategory(damage, defense, defender.group)
-  const mitigation = base.armored
-    ? mitigateWithArmor(category, defender.armor?.usesLeft ?? 0)
-    : { applied: category, usesSpent: 0 }
+  const armor = defender.armor
+  let mitigation = { applied: category, usesSpent: 0 }
+  if (base.armored && armorActive(armor)) {
+    // Sin usos cargados la armadura mitiga sin gastarse.
+    const tracked = armor.usesMax > 0
+    const result = mitigateWithArmor(category, tracked ? armor.usesLeft : Number.MAX_SAFE_INTEGER)
+    mitigation = { applied: result.applied, usesSpent: tracked ? result.usesSpent : 0 }
+  }
   return { damage, defense, armored: base.armored, category, applied: mitigation.applied, armorSpent: mitigation.usesSpent }
 }
 

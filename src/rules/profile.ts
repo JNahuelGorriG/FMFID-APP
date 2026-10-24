@@ -82,6 +82,14 @@ export function buildProfile(participant: Participant, character?: Character): P
 }
 
 /**
+ * Una armadura cuenta mientras le queden usos. Si no tiene usos cargados (máximo 0), cuenta siempre
+ * y no se gasta, para que una armadura sin tabla de usos no se tome por rota.
+ */
+export function armorActive(armor: ArmorState | null): armor is ArmorState {
+  return armor !== null && (armor.usesMax === 0 || armor.usesLeft > 0)
+}
+
+/**
  * Defensa que cuenta contra un ataque: con armadura puesta y con usos, es la CA más el valor
  * de la armadura (si suma a esa defensa). Sin armadura (o con la armadura agotada), la defensa natural SA.
  */
@@ -91,7 +99,7 @@ export function defenseAgainst(
 ): { value: number; armored: boolean } {
   const d = profile.defense[type]
   const armor = profile.armor
-  if (armor && armor.usesLeft > 0) {
+  if (armorActive(armor)) {
     const target = armor.bonusTarget ?? 'fisica'
     const applies = target === 'ambas' || target === (type === 'fisico' ? 'fisica' : 'magica')
     return { value: d.ca + (applies ? armor.bonus : 0), armored: true }

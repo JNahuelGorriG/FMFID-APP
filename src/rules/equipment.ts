@@ -89,3 +89,11 @@ export const ARMOR_USES: Record<ArmorType, Record<ArmorUsesRank, ArmorUses>> = {
 export function armorUses(rankName: string, type: ArmorType): ArmorUses | null {
   return (ARMOR_USES[type] as Record<string, ArmorUses>)[rankName] ?? null
 }
+
+/**
+ * Usos de una armadura de ese rango y tipo. Los rangos con "+" (D+, A+, S+) usan los de su letra,
+ * porque la tabla solo tiene E, D, C, B, A y S. SS y SSS no tienen tabla.
+ */
+export function armorUsesFor(rankName: string, type: ArmorType): ArmorUses | null {
+  return armorUses(rankName, type) ?? armorUses(rankName.replace('+', ''), type)
+}

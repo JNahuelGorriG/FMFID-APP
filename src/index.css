@@ -242,3 +242,6 @@ details[open] > summary { margin-bottom: 8px; }
 .stage-title { margin: 14px 0 6px; }
 
 .cmp.ref tr.hit td { background: var(--bg); color: var(--accent-soft); font-weight: 700; }
+
+.check.pick { align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 6px; color: var(--text); }
+.check.pick.active { border-color: var(--accent); }

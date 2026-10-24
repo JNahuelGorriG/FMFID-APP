@@ -58,6 +58,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const [force, setForce] = useState(false)
   const [damage, setDamage] = useState<number | undefined>(undefined)
   const [defense, setDefense] = useState<number | undefined>(undefined)
+  const [defenseChoice, setDefenseChoice] = useState<AttackType | null>(null)
   const [d8, setD8] = useState<number | undefined>(undefined)
   const [d6, setD6] = useState<number | undefined>(undefined)
   const [points, setPoints] = useState<number | undefined>(undefined)
@@ -86,7 +87,15 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const hit = outcome === null ? null : isHit(outcome)
   const canDamage = hit === true || force
 
-  const stage = damageStage(attacker, defender, type, { damage, defense })
+  // Defensa que participa: por defecto la del mismo tipo que el ataque, pero se puede elegir la otra.
+  const defenseType: AttackType = defenseChoice ?? type
+  const stage = damageStage(attacker, defender, type, { damage, defense }, defenseType)
+  const stageFor = (dt: AttackType) =>
+    damageStage(attacker, defender, type, { damage, defense: dt === defenseType ? defense : undefined }, dt)
+  const checks: { type: AttackType; label: string; stage: ReturnType<typeof damageStage> }[] = [
+    { type: 'fisico', label: 'Defensa física', stage: stageFor('fisico') },
+    { type: 'magico', label: 'Defensa mágica', stage: stageFor('magico') },
+  ]
   const thresholds = THRESHOLDS[defender.group]
   const scaleRows: { category: WoundCategory; range: string }[] = [
     { category: 'leve', range: `hasta ${thresholds.normal}` },
@@ -119,6 +128,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     setForce(false)
     setDamage(undefined)
     setDefense(undefined)
+    setDefenseChoice(null)
     setD8(undefined)
     setD6(undefined)
     setPoints(undefined)
@@ -131,6 +141,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     setDefenderStat(DEFAULT_STATS[next][1])
     setDamage(undefined)
     setDefense(undefined)
+    setDefenseChoice(null)
   }
 
   async function registerMiss() {
@@ -270,7 +281,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
       <div className="card" aria-label="Daño contra defensa">
         <h2>Daño contra defensa</h2>
         <p className="muted small">
-          {type === 'fisico' ? 'Daño físico contra defensa física' : 'Daño mágico contra defensa mágica'}. La escala es la de{' '}
+          Por defecto se enfrenta el daño {type === 'fisico' ? 'físico' : 'mágico'} contra la defensa {type === 'fisico' ? 'física' : 'mágica'}. La escala es la de{' '}
           {defender.name} ({defender.rankName ?? 'sin rango'}, grupo {GROUP_LABELS[defender.group]}).
         </p>
         <div className="grid-2">
@@ -288,12 +299,39 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           />
         </div>
         <p className="small">
-          {attacker.name}: daño <strong>{fmt(stage.damage)}</strong> contra la defensa de {defender.name}:{' '}
-          <strong>{fmt(stage.defense)}</strong> {stage.armored ? '(con armadura)' : '(sin armadura, defensa natural SA)'}
+          Daño {type === 'fisico' ? 'físico' : 'mágico'} de {attacker.name}: <strong>{fmt(stage.damage)}</strong>. Elige contra
+          qué defensa de {defender.name} se chequea:
         </p>
+        <div role="radiogroup" aria-label="Defensa que participa">
+          {checks.map((c) => {
+            const d = c.stage.damage - c.stage.defense
+            const natural = defender.defense[c.type]
+            const detail = c.stage.armored
+              ? `CA ${fmt(natural.ca)} + armadura ${fmt(Math.max(0, c.stage.defense - natural.ca))}`
+              : `sin armadura, defensa natural SA ${fmt(natural.sa)}`
+            return (
+              <label key={c.type} className={c.type === defenseType ? 'check pick active' : 'check pick'}>
+                <input
+                  type="radio"
+                  name="defense-type"
+                  aria-label={`${c.label} participa`}
+                  checked={c.type === defenseType}
+                  onChange={() => {
+                    setDefenseChoice(c.type)
+                    setDefense(undefined)
+                  }}
+                />
+                <span>
+                  <strong>{c.label}:</strong> {fmt(c.stage.defense)} ({detail}) · diferencia {d >= 0 ? '+' : ''}
+                  {fmt(d)} · nivel {DAMAGE_LEVEL[c.stage.category]} → herida {c.stage.category}
+                  {c.stage.armored && c.stage.armorSpent > 0 ? ` (la armadura la baja a ${c.stage.applied})` : ''}
+                </span>
+              </label>
+            )
+          })}
+        </div>
         <p className="small">
-          Diferencia {stage.damage - stage.defense >= 0 ? '+' : ''}
-          {fmt(stage.damage - stage.defense)} · nivel <strong>{DAMAGE_LEVEL[stage.category]}</strong> → herida{' '}
+          Participa la <strong>{defenseType === 'fisico' ? 'defensa física' : 'defensa mágica'}</strong>: herida{' '}
           <strong>{stage.category}</strong>
           {stage.armored && stage.armorSpent > 0 && (
             <>
@@ -301,6 +339,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
               → la armadura la baja a <strong>{stage.applied}</strong> y gasta {stage.armorSpent} uso(s)
             </>
           )}
+          .
         </p>
         <div className="table-wrap" aria-label="Escala del daño">
           <table className="cmp ref">

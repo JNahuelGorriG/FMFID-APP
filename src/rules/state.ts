@@ -6,7 +6,7 @@ import type { Saves } from './saves'
 import { defaultSaves } from './saves'
 import type { Character } from './character'
 import { characterSheet } from './character'
-import { armorBonus, armorUses } from './equipment'
+import { armorBonus, armorUsesFor } from './equipment'
 import type { ArmorType } from './equipment'
 import { RANKS } from './ranks'
 
@@ -30,10 +30,13 @@ export interface ArmorState {
   usesLeft: number
 }
 
-/** Arma una armadura con los valores de las tablas (bono y usos). Fuera del rango E-S los usos quedan en 0. */
+/**
+ * Arma una armadura con los valores de las tablas (bono y usos). Los rangos con + usan los usos de su
+ * letra. Si no hay tabla (SS, SSS) los usos quedan en 0: la armadura cuenta siempre, sin gastarse.
+ */
 export function armorFromTable(type: ArmorType, rank: string): ArmorState {
   const found = RANKS.find((r) => r.name === rank) ?? RANKS[0]
-  const uses = armorUses(found.name, type)?.total ?? 0
+  const uses = armorUsesFor(found.name, type)?.total ?? 0
   return { type, rank: found.name, bonus: armorBonus(found, type), bonusTarget: 'fisica', usesMax: uses, usesLeft: uses }
 }
 

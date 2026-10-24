@@ -332,18 +332,33 @@ function PcPanel({
         <h2>Armadura</h2>
         {state.armor ? (
           <>
+            <p className="result" role="status">
+              Armadura puesta: {ARMOR_OPTIONS.find((o) => o.value === state.armor?.type)?.label} {state.armor.rank} · suma{' '}
+              {state.armor.bonus} a la {TARGET_OPTIONS.find((o) => o.value === (state.armor?.bonusTarget ?? 'fisica'))?.label.toLowerCase()} ·{' '}
+              {state.armor.usesMax > 0 ? `usos ${state.armor.usesLeft}/${state.armor.usesMax}` : 'sin conteo de usos'}
+            </p>
             <div className="grid-2">
               <SelectField
                 label="Tipo de armadura"
                 value={state.armor.type}
                 options={ARMOR_OPTIONS}
-                onChange={(type) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, type } : s.armor }))}
+                onChange={(type) =>
+                  void update((s) => ({
+                    ...s,
+                    armor: s.armor ? { ...armorFromTable(type, s.armor.rank), bonusTarget: s.armor.bonusTarget } : s.armor,
+                  }))
+                }
               />
               <SelectField
                 label="Rango de la armadura"
                 value={state.armor.rank}
                 options={RANK_OPTIONS}
-                onChange={(rank) => void update((s) => ({ ...s, armor: s.armor ? { ...s.armor, rank } : s.armor }))}
+                onChange={(rank) =>
+                  void update((s) => ({
+                    ...s,
+                    armor: s.armor ? { ...armorFromTable(s.armor.type, rank), bonusTarget: s.armor.bonusTarget } : s.armor,
+                  }))
+                }
               />
               <SelectField
                 label="La armadura suma a"
@@ -383,14 +398,16 @@ function PcPanel({
                   void update((s) => ({ ...s, armor: s.armor ? armorFromTable(s.armor.type, s.armor.rank) : s.armor }))
                 }
               >
-                Cargar valores de la tabla
+                Restablecer a los valores de la tabla
               </button>
               <button className="btn secondary compact" onClick={() => void update((s) => ({ ...s, armor: null }))}>
                 Sacar armadura
               </button>
             </div>
             <p className="muted small">
-              Con armadura y usos, la defensa elegida es la CA más este valor. Sin armadura, cuenta la defensa natural SA.
+              Al cambiar el tipo o el rango se cargan solos el valor y los usos de la tabla (los rangos con + usan los usos
+              de su letra: D+ usa los de D). Después los puedes editar. Con armadura, la defensa es la CA más el valor; sin
+              armadura, o con la armadura agotada, la defensa natural SA. Con usos en 0 cuenta siempre y no se gasta.
             </p>
           </>
         ) : (

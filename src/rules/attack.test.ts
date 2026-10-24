@@ -112,7 +112,9 @@ describe('defensa: con armadura (CA) o sin ella (SA)', () => {
 
   it('la armadura se arma desde las tablas', () => {
     expect(armorFromTable('pesada', 'C')).toEqual({ type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica', usesMax: 18, usesLeft: 18 })
-    expect(armorFromTable('ligera', 'A+').usesMax).toBe(0) // fuera de la tabla de usos
+    expect(armorFromTable('ligera', 'A+').usesMax).toBe(16) // A+ usa los usos de A
+    expect(armorFromTable('ligera', 'D+').usesMax).toBe(7) // D+ usa los de D
+    expect(armorFromTable('ligera', 'SS').usesMax).toBe(0) // SS no tiene tabla de usos
   })
 })
 
@@ -332,5 +334,49 @@ describe('barra de saturación', () => {
 
   it('el jugador entra al combate con la barra en 0', () => {
     expect(initialPcState(edward).saturation).toBe(0)
+  })
+})
+
+describe('armadura sin usos cargados y defensa elegible', () => {
+  const withArmor = (armor: object) => {
+    const { combat, pc: id } = arena()
+    const next = updateParticipant(combat, id, (p) => ({
+      ...p,
+      pc: p.pc ? { ...p.pc, armor: { ...armorFromTable('ligera', 'SS'), bonusTarget: 'fisica' as const, bonus: 50, ...armor } } : null,
+    }))
+    return {
+      defender: buildProfile(next.participants[0], edward)!,
+      attacker: buildProfile(next.participants[1])!,
+    }
+  }
+
+  it('una armadura sin usos cargados (máximo 0) cuenta siempre: no se toma por rota', () => {
+    const { defender } = withArmor({ usesMax: 0, usesLeft: 0 })
+    const d = defenseAgainst(defender, 'fisico')
+    expect(d.armored).toBe(true)
+    expect(d.value).toBeCloseTo(447.64 + 50, 2)
+  })
+
+  it('y mitiga sin gastar usos', () => {
+    const { defender, attacker } = withArmor({ usesMax: 0, usesLeft: 0 })
+    const stage = damageStage(attacker, defender, 'fisico', { damage: 1200 })
+    expect(stage.category).toBe('letal')
+    expect(stage.applied).toBe('fuerte')
+    expect(stage.armorSpent).toBe(0)
+  })
+
+  it('una armadura con usos que se agotaron sí deja de contar', () => {
+    const { defender } = withArmor({ usesMax: 7, usesLeft: 0 })
+    expect(defenseAgainst(defender, 'fisico').armored).toBe(false)
+  })
+
+  it('el daño se puede chequear contra la defensa física o la mágica', () => {
+    const { defender, attacker } = withArmor({ usesMax: 7, usesLeft: 7 })
+    const physical = damageStage(attacker, defender, 'fisico', {}, 'fisico')
+    const magical = damageStage(attacker, defender, 'fisico', {}, 'magico')
+    expect(physical.damage).toBe(magical.damage) // el daño es el mismo
+    expect(physical.defense).toBeCloseTo(497.64, 2) // CA física + armadura
+    expect(magical.defense).toBeCloseTo(defender.defense.magico.ca, 2) // la armadura suma solo a la física
+    expect(damageStage(attacker, defender, 'fisico').defense).toBe(physical.defense) // por defecto, la del mismo tipo
   })
 })

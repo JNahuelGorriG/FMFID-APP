@@ -6,7 +6,7 @@ import App from '../App'
 import { db } from '../db'
 import { edward } from '../rules/fixtures'
 import { combatRepo, npcRepo, repo } from './data'
-import { defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext } from '../rules'
+import { defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext, updateParticipant } from '../rules'
 import type { Character } from '../rules'
 
 const { id: _id, createdAt: _c, updatedAt: _u, ...edwardData } = edward
@@ -275,7 +275,6 @@ describe('app', () => {
     fireEvent.click(await screen.findByText('Poner armadura'))
     fireEvent.change(await screen.findByLabelText('Tipo de armadura'), { target: { value: 'pesada' } })
     fireEvent.change(screen.getByLabelText('Rango de la armadura'), { target: { value: 'C' } })
-    fireEvent.click(screen.getByText('Cargar valores de la tabla'))
     await waitFor(async () => {
       const [c] = await combatRepo.list()
       expect(c.participants[0].pc?.armor).toEqual({ type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica', usesMax: 18, usesLeft: 18 })
@@ -742,7 +741,7 @@ describe('app', () => {
     goTo('Ataque')
     const card = await screen.findByLabelText('Daño contra defensa')
     // Edward (daño físico con arma 485,9) contra el Goblin (defensa SA 380): +105,9 en rango C+ (grupo Medio)
-    expect(card.textContent).toContain('Diferencia +105,9')
+    expect(card.textContent).toContain('diferencia +105,9')
     expect(card.textContent).toContain('herida medio')
     const scale = within(screen.getByLabelText('Escala del daño'))
     expect(scale.getByText('hasta 75')).toBeTruthy()
@@ -837,5 +836,72 @@ describe('app', () => {
     const [c] = await combatRepo.list()
     expect(c.history[0].text).toContain('recibe una curación de nivel 4')
     expect(c.alerts[0].text).toContain('barrera de 1 leve')
+  })
+
+  it('armadura: al elegir tipo y rango se cargan solos el valor y los usos de la tabla', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    fireEvent.click(await screen.findByText('Poner armadura'))
+    expect((await screen.findByRole('status')).textContent).toContain('Armadura puesta')
+
+    // D+ no está en la tabla de usos: usa los de D (ligera: 7)
+    fireEvent.change(await screen.findByLabelText('Rango de la armadura'), { target: { value: 'D+' } })
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.armor).toMatchObject({ type: 'ligera', rank: 'D+', bonus: 50, usesMax: 7, usesLeft: 7 })
+    })
+    expect(screen.getByRole('status').textContent).toContain('usos 7/7')
+
+    fireEvent.change(screen.getByLabelText('Tipo de armadura'), { target: { value: 'pesada' } })
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.armor).toMatchObject({ type: 'pesada', rank: 'D+', bonus: 100, usesMax: 13 })
+    })
+  })
+
+  it('ataque: la armadura puesta cuenta en la defensa y se ven las dos defensas para elegir cuál participa', async () => {
+    await setUpDuel()
+    // Edward con armadura pesada rango C: suma 130 a la defensa física
+    const [before] = await combatRepo.list()
+    const edwardId = before.participants.find((p) => p.name === 'Edward')!.id
+    await combatRepo.update(before.id, (c) =>
+      updateParticipant(c, edwardId, (p) => ({
+        ...p,
+        pc: p.pc ? { ...p.pc, armor: { type: 'pesada', rank: 'C', bonus: 130, bonusTarget: 'fisica', usesMax: 18, usesLeft: 18 } } : null,
+      })),
+    )
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: before.participants.find((p) => p.name === 'Goblin')!.id } })
+
+    const card = await screen.findByLabelText('Daño contra defensa')
+    // defensa física: CA 447,6 + armadura 130 = 577,6 (con armadura)
+    expect(card.textContent).toContain('Defensa física: 577,6 (CA 447,6 + armadura 130)')
+    // defensa mágica: la armadura no suma
+    expect(card.textContent).toContain('Defensa mágica:')
+    expect(screen.getByLabelText('Defensa física participa')).toHaveProperty('checked', true)
+
+    fireEvent.click(screen.getByLabelText('Defensa mágica participa'))
+    await waitFor(() => expect(screen.getByLabelText('Defensa mágica participa')).toHaveProperty('checked', true))
+    expect((await screen.findByLabelText('Daño contra defensa')).textContent).toContain('Participa la defensa mágica')
+  })
+
+  it('ataque: una armadura con usos en 0 no se toma por rota y suma a la defensa', async () => {
+    await setUpDuel()
+    const [before] = await combatRepo.list()
+    const edwardId = before.participants.find((p) => p.name === 'Edward')!.id
+    await combatRepo.update(before.id, (c) =>
+      updateParticipant(c, edwardId, (p) => ({
+        ...p,
+        pc: p.pc ? { ...p.pc, armor: { type: 'ligera', rank: 'SS', bonus: 50, bonusTarget: 'fisica', usesMax: 0, usesLeft: 0 } } : null,
+      })),
+    )
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: before.participants.find((p) => p.name === 'Goblin')!.id } })
+    expect((await screen.findByLabelText('Daño contra defensa')).textContent).toContain('Defensa física: 497,6 (CA 447,6 + armadura 50)')
   })
 })
