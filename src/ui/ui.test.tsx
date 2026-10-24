@@ -344,7 +344,7 @@ describe('app', () => {
       expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.hpCurrent).toBe(8) // herida media: 2 puntos
     })
 
-    fireEvent.click(await screen.findByText('Deshacer último ataque'))
+    fireEvent.click(await screen.findByText('Deshacer última acción'))
     await waitFor(async () => {
       const [c] = await combatRepo.list()
       expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.hpCurrent).toBe(10)
@@ -735,5 +735,107 @@ describe('app', () => {
     fireEvent.change(await screen.findByLabelText('Súper primario'), { target: { value: 'fuerza' } })
     fireEvent.click(screen.getByText('Guardar cambios'))
     await waitFor(async () => expect((await edwardInDb()).superStats).toEqual({ fuerza: 'primario', sabiduria: 'terciario' }))
+  })
+
+  it('ataque: el daño contra defensa está siempre a la vista, antes de tirar el d20, con su escala', async () => {
+    await setUpDuel()
+    goTo('Ataque')
+    const card = await screen.findByLabelText('Daño contra defensa')
+    // Edward (daño físico con arma 485,9) contra el Goblin (defensa SA 380): +105,9 en rango C+ (grupo Medio)
+    expect(card.textContent).toContain('Diferencia +105,9')
+    expect(card.textContent).toContain('herida medio')
+    const scale = within(screen.getByLabelText('Escala del daño'))
+    expect(scale.getByText('hasta 75')).toBeTruthy()
+    expect(scale.getByText('76 a 150')).toBeTruthy()
+    expect(scale.getByText('151 a 300')).toBeTruthy()
+    expect(scale.getByText('más de 300')).toBeTruthy()
+    expect(within(screen.getByLabelText('Escala del daño')).getAllByRole('row').some((r) => r.className === 'hit')).toBe(true)
+  })
+
+  it('ataque: contra un jugador se ve la tabla de daños con sus resultados antes de tirar', async () => {
+    await setUpDuel()
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: (await combatRepo.list())[0].participants[1].id } })
+    const table = await screen.findByLabelText('Tabla de daños')
+    expect(table.textContent).toContain('Resistencia')
+    expect(table.textContent).toContain('1-5')
+    expect(screen.getByText(/Para aplicar el daño falta el resultado del impacto/)).toBeTruthy()
+  })
+
+  it('ataque: el d20 no cambia el daño, y se puede aplicar sin tirada de impacto', async () => {
+    await setUpDuel()
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: (await combatRepo.list())[0].participants[1].id } })
+    const before = (await screen.findByLabelText('Daño contra defensa')).textContent
+    fireEvent.change(await screen.findByLabelText('Tirada del defensor (d20)'), { target: { value: '1' } })
+    expect((await screen.findByLabelText('Daño contra defensa')).textContent).toContain('herida leve')
+    expect(before).toContain('herida leve') // igual antes y después de la tirada
+
+    fireEvent.click(screen.getByLabelText('Aplicar el daño sin depender de la tirada de impacto'))
+    fireEvent.change(await screen.findByLabelText('d8 de resistencia'), { target: { value: '3' } })
+    fireEvent.click(await screen.findByText('Confirmar y aplicar'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.find((p) => p.name === 'Edward')?.pc?.health.medio).toBe(6) // leve en fila 6-10: 1 medio
+    })
+  })
+
+  it('curación: se ve la tabla en las tablas de la mesa', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByText('Más'))
+    fireEvent.click(await screen.findByText('Ver tablas'))
+    fireEvent.change(await screen.findByLabelText('Tabla'), { target: { value: 'curaciones' } })
+    expect(await screen.findByText('7L 5M + 2Xb (40)')).toBeTruthy()
+    expect(screen.getByText('8L + 1Lb (9)')).toBeTruthy()
+  })
+
+  it('curación: un jugador herido se cura con el nivel y la opción que elige, y suma saturación', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(await screen.findByLabelText('Leves: menos'))
+      await waitFor(() => expect(screen.getByLabelText('Leves: valor').textContent).toContain(String(9 - i)))
+    }
+
+    fireEvent.change(screen.getByLabelText('Nivel de curación'), { target: { value: '3' } })
+    expect(screen.getByLabelText('Opción 1: 8L')).toBeTruthy()
+    expect(screen.getByLabelText('Opción 2: 2L 1M')).toBeTruthy()
+    fireEvent.click(screen.getByText('Aplicar curación'))
+
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      const pc = c.participants[0].pc
+      expect(pc?.health.leve).toBe(10) // recuperó los 3 leves que le faltaban
+      expect(pc?.saturation).toBe(3)
+      expect(c.alerts[0].text).toContain('recibe una curación de nivel 3')
+    })
+  })
+
+  it('curación: una opción con barrera la agrega y se puede deshacer', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    fireEvent.change(await screen.findByLabelText('Nivel de curación'), { target: { value: '4' } }) // B
+    fireEvent.click(screen.getByLabelText('Opción 1: 8L + 1Lb'))
+    fireEvent.click(screen.getByText('Aplicar curación'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.barriers[0].wounds).toEqual({ leve: 1, medio: 0, letal: 0 })
+    })
+
+    // deshacer desde Ataque (última acción)
+    // queda registrada como última acción del combate, para poder deshacerla
+    const [c] = await combatRepo.list()
+    expect(c.history[0].text).toContain('recibe una curación de nivel 4')
+    expect(c.alerts[0].text).toContain('barrera de 1 leve')
   })
 })

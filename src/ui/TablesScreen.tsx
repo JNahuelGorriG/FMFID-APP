@@ -3,6 +3,7 @@ import { useState } from 'react'
 import {
   ARMOR_USES,
   D20_RANGES,
+  HEALING_TABLE,
   OUTCOME_ORDER,
   RANKS,
   STAT_NAMES,
@@ -11,6 +12,8 @@ import {
   WOUND_TABLE,
   armorBonus,
   characterSheet,
+  healingText,
+  healingValue,
   weaponBonus,
 } from '../rules'
 import type { ArmorType, WeaponSize } from '../rules'
@@ -23,6 +26,7 @@ type TableId =
   | 'umbrales'
   | 'exitos'
   | 'danos'
+  | 'curaciones'
   | 'usos'
   | 'armaduras'
   | 'armas'
@@ -35,6 +39,7 @@ const TABLES: { value: TableId; label: string }[] = [
   { value: 'umbrales', label: 'Rangos y sus éxitos y fallos (diferencia de stats)' },
   { value: 'exitos', label: 'Tabla de éxitos (d20)' },
   { value: 'danos', label: 'Tabla de daños' },
+  { value: 'curaciones', label: 'Tabla de curaciones' },
   { value: 'usos', label: 'Usos de las armaduras' },
   { value: 'armaduras', label: 'Stats de armaduras' },
   { value: 'armas', label: 'Stats de armas' },
@@ -138,13 +143,34 @@ export function TablesScreen({ onBack }: { onBack: () => void }) {
             Filas: resultado de resistencia (d8 + 6, con d6 en los extremos). Columnas: categoría de herida.
           </p>
           <DataTable
-            head={['Resistencia', 'Leve', 'Medio', 'Fuerte', 'Letal']}
+            head={['Resistencia', 'Normal (leve)', 'Menor (medio)', 'Menor+ (fuerte)', 'Fallo (letal)']}
             rows={WOUND_TABLE.map((row) => [
               rangeText([row.min, row.max]),
               woundsText(row.cells.leve),
               woundsText(row.cells.medio),
               woundsText(row.cells.fuerte),
               woundsText(row.cells.letal),
+            ])}
+          />
+        </>
+      )}
+
+      {table === 'curaciones' && (
+        <>
+          <p className="muted small">
+            Para pociones y curación por energía (maná o estamina). L = leve, M = medio, X = letal y b = barrera de vida.
+            Cada nivel ofrece 1 a 3 formas de usar la misma curación. Entre paréntesis, el valor en leves (3 por un medio, 9
+            por un letal) para comparar: lo curado + la barrera.
+          </p>
+          <DataTable
+            head={['Nivel', 'Rango', 'Opción 1', 'Opción 2', 'Opción 3']}
+            rows={HEALING_TABLE.map((l) => [
+              l.level,
+              l.rank,
+              ...[0, 1, 2].map((i) => {
+                const o = l.options[i]
+                return o ? `${healingText(o)} (${healingValue(o).total})` : ''
+              }),
             ])}
           />
         </>

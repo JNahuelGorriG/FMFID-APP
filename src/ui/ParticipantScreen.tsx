@@ -1,15 +1,20 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import {
+  HEALING_TABLE,
   RANKS,
   STAT_NAMES,
+  addAlert,
+  applyHealing,
   armorFromTable,
   batteryGainFromRoll,
   chargeBattery,
   claimSaveFromBattery,
   effectiveCharacter,
   effectiveEnemy,
+  healingText,
   naturalBases,
+  recordAction,
   removeParticipant,
   updateParticipant,
 } from '../rules'
@@ -31,7 +36,7 @@ import { EffectsPanel } from './EffectsPanel'
 import { clampSaturation } from '../rules'
 import { SaturationCard } from './SaturationCard'
 import { NumberField, SelectField, Stepper } from './fields'
-import { STAT_LABELS, describeDuration, fmt } from './format'
+import { STAT_LABELS, describeDuration, fmt, woundsText } from './format'
 
 interface Props {
   combatId: string
@@ -173,6 +178,11 @@ function PcPanel({
   const [bRemaining, setBRemaining] = useState(3)
   const [roll, setRoll] = useState(10)
   const [message, setMessage] = useState('')
+  const [healLevel, setHealLevel] = useState(1)
+  const [healOption, setHealOption] = useState(0)
+  const [healSaturate, setHealSaturate] = useState(true)
+  const [hUnit, setHUnit] = useState<DurationUnit>('rondas')
+  const [hRemaining, setHRemaining] = useState(3)
 
   const rows: [string, number, number][] = []
   for (const s of STAT_NAMES) {
@@ -189,6 +199,27 @@ function PcPanel({
     ['Defensa mágica SA', sheet.derived.magicDefenseSA, view.derived.magicDefenseSA],
   ]
   for (const [label, n, e] of pairs) if (n !== null && e !== null && n !== e) rows.push([label, n, e])
+
+  const healing = HEALING_TABLE.find((l) => l.level === healLevel) ?? HEALING_TABLE[0]
+  const chosen = healing.options[Math.min(healOption, healing.options.length - 1)]
+
+  async function applyHeal() {
+    const duration = { unit: hUnit, remaining: hUnit === 'manual' ? 0 : hRemaining }
+    const settings = { barrierDuration: duration, combatId: combat.id, saturate: healSaturate }
+    const preview = applyHealing(pc, character.baseHealth, chosen, settings)
+    const parts = [`cura ${woundsText(preview.healed)}`]
+    if (preview.barrier) parts.push(`barrera de ${woundsText(preview.barrier)}`)
+    const text = `${character.name} recibe una curación de nivel ${healing.level} (${healing.rank}), opción ${healing.options.indexOf(chosen) + 1}: ${parts.join(' y ')}.`
+    await combatRepo.update(combat.id, (c) => {
+      const target = c.participants.find((p) => p.id === participantId)
+      if (!target?.pc) return c
+      const next = updateParticipant(recordAction(c, text, target), participantId, (p) =>
+        p.pc ? { ...p, pc: applyHealing(p.pc, character.baseHealth, chosen, settings).pc } : p,
+      )
+      return addAlert(next, text)
+    })
+    setMessage(text)
+  }
 
   function addBarrier() {
     if (bLeve + bMedio + bLetal <= 0) return setMessage('La barrera necesita al menos una herida.')
@@ -241,6 +272,54 @@ function PcPanel({
           ))}
         </div>
         {state.health.letal === 0 && <p className="errors">Sin heridas letales: estado crítico.</p>}
+      </div>
+
+      <div className="card">
+        <h2>Curación</h2>
+        <p className="muted small">Pociones y curación por energía. Cada nivel ofrece 1 a 3 formas de usar la misma curación.</p>
+        <SelectField
+          label="Nivel de curación"
+          value={healLevel}
+          options={HEALING_TABLE.map((l) => ({ value: l.level, label: `Nivel ${l.level} (${l.rank})` }))}
+          onChange={(v) => {
+            setHealLevel(v)
+            setHealOption(0)
+          }}
+        />
+        <div role="radiogroup" aria-label="Opciones de curación">
+          {healing.options.map((o, i) => (
+            <label key={i} className="check">
+              <input
+                type="radio"
+                name="heal-option"
+                checked={chosen === o}
+                onChange={() => setHealOption(i)}
+              />
+              Opción {i + 1}: {healingText(o)}
+            </label>
+          ))}
+        </div>
+        <p className="small">
+          Cura {woundsText(chosen.heal)}
+          {chosen.barrier.leve + chosen.barrier.medio + chosen.barrier.letal > 0 &&
+            ` y da una barrera de ${woundsText(chosen.barrier)}`}
+          .
+        </p>
+        {chosen.barrier.leve + chosen.barrier.medio + chosen.barrier.letal > 0 && (
+          <div className="grid-2">
+            <SelectField label="La barrera dura" value={hUnit} options={BARRIER_UNITS} onChange={setHUnit} />
+            {hUnit !== 'manual' && (
+              <NumberField label="Duración de la barrera" integer value={hRemaining} onChange={setHRemaining} />
+            )}
+          </div>
+        )}
+        <label className="check">
+          <input type="checkbox" checked={healSaturate} onChange={(e) => setHealSaturate(e.target.checked)} />
+          Sumar a la saturación lo que se cure
+        </label>
+        <button className="btn" onClick={() => void applyHeal()}>
+          Aplicar curación
+        </button>
       </div>
 
       <SaturationCard

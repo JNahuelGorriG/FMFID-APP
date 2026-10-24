@@ -2,6 +2,8 @@ import { useState } from 'react'
 import {
   STAT_NAMES,
   SUGGESTED_NPC_POINTS,
+  THRESHOLDS,
+  WOUND_TABLE,
   addAlert,
   applyToNpc,
   applyToPc,
@@ -18,7 +20,7 @@ import {
   updateParticipant,
   woundsForPc,
 } from '../../rules'
-import type { AttackType, Combat, Profile, StatName } from '../../rules'
+import type { AttackType, Combat, Profile, StatName, WoundCategory } from '../../rules'
 import { combatRepo } from '../data'
 import { NumberField, OptionalNumberField, SelectField } from '../fields'
 import { GROUP_LABELS, LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, withRank, woundsText } from '../format'
@@ -31,6 +33,14 @@ const TYPE_OPTIONS: { value: AttackType; label: string }[] = [
 const DEFAULT_STATS: Record<AttackType, [StatName, StatName]> = {
   fisico: ['destreza', 'percepcion'],
   magico: ['inteligencia', 'sabiduria'],
+}
+
+/** Nombre del nivel de daño según la herida (columnas de la tabla de daños). */
+const DAMAGE_LEVEL: Record<WoundCategory, string> = {
+  leve: 'Normal',
+  medio: 'Menor',
+  fuerte: 'Menor+',
+  letal: 'Fallo',
 }
 
 const validRoll = (n: number | undefined, max: number): n is number =>
@@ -77,6 +87,13 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const canDamage = hit === true || force
 
   const stage = damageStage(attacker, defender, type, { damage, defense })
+  const thresholds = THRESHOLDS[defender.group]
+  const scaleRows: { category: WoundCategory; range: string }[] = [
+    { category: 'leve', range: `hasta ${thresholds.normal}` },
+    { category: 'medio', range: `${thresholds.normal + 1} a ${thresholds.mayor}` },
+    { category: 'fuerte', range: `${thresholds.mayor + 1} a ${thresholds.mayorPlus}` },
+    { category: 'letal', range: `más de ${thresholds.mayorPlus}` },
+  ]
   const isPc = defender.kind === 'pc'
 
   let resistance: number | null = null
@@ -239,93 +256,142 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           <p className="small">Resultado del defensor: {OUTCOME_LABELS[rollOutcome]}</p>
         )}
         {outcome && <p className="result">Ataque: {OUTCOME_LABELS[outcome]}</p>}
-        {hit === false && (
-          <>
-            <label className="check">
-              <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
-              Aplicar daño igual
-            </label>
-            {!force && (
-              <button className="btn secondary" onClick={() => void registerMiss()}>
-                Registrar fallo
-              </button>
-            )}
-          </>
+        <label className="check">
+          <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+          Aplicar el daño sin depender de la tirada de impacto
+        </label>
+        {hit === false && !force && (
+          <button className="btn secondary" onClick={() => void registerMiss()}>
+            Registrar fallo
+          </button>
         )}
       </div>
 
-      {canDamage && (
-        <div className="card">
-          <h2>Daño</h2>
-          <div className="grid-2">
-            <OptionalNumberField
-              label="Daño"
-              value={damage}
-              placeholder={fmt(attacker.damage[type])}
-              onChange={setDamage}
-            />
-            <OptionalNumberField
-              label="Defensa"
-              value={defense}
-              placeholder={fmt(stage.defense)}
-              onChange={setDefense}
-            />
-          </div>
-          <p className="small">
-            Daño <strong>{fmt(stage.damage)}</strong> contra defensa <strong>{fmt(stage.defense)}</strong>
-            {stage.armored ? ' (con armadura)' : ' (sin armadura)'}: herida <strong>{stage.category}</strong>
-            {stage.armored && stage.armorSpent > 0 && (
-              <>
-                {' '}
-                → la armadura la baja a <strong>{stage.applied}</strong> y gasta {stage.armorSpent} uso(s)
-              </>
-            )}
-            .
-          </p>
-
-          {isPc ? (
+      <div className="card" aria-label="Daño contra defensa">
+        <h2>Daño contra defensa</h2>
+        <p className="muted small">
+          {type === 'fisico' ? 'Daño físico contra defensa física' : 'Daño mágico contra defensa mágica'}. La escala es la de{' '}
+          {defender.name} ({defender.rankName ?? 'sin rango'}, grupo {GROUP_LABELS[defender.group]}).
+        </p>
+        <div className="grid-2">
+          <OptionalNumberField
+            label="Daño"
+            value={damage}
+            placeholder={fmt(attacker.damage[type])}
+            onChange={setDamage}
+          />
+          <OptionalNumberField
+            label="Defensa"
+            value={defense}
+            placeholder={fmt(stage.defense)}
+            onChange={setDefense}
+          />
+        </div>
+        <p className="small">
+          {attacker.name}: daño <strong>{fmt(stage.damage)}</strong> contra la defensa de {defender.name}:{' '}
+          <strong>{fmt(stage.defense)}</strong> {stage.armored ? '(con armadura)' : '(sin armadura, defensa natural SA)'}
+        </p>
+        <p className="small">
+          Diferencia {stage.damage - stage.defense >= 0 ? '+' : ''}
+          {fmt(stage.damage - stage.defense)} · nivel <strong>{DAMAGE_LEVEL[stage.category]}</strong> → herida{' '}
+          <strong>{stage.category}</strong>
+          {stage.armored && stage.armorSpent > 0 && (
             <>
-              <div className="grid-2">
-                <OptionalNumberField label="d8 de resistencia" value={d8} onChange={setD8} />
-                {(d8 === 1 || d8 === 8) && <OptionalNumberField label="d6 adicional" value={d6} onChange={setD6} />}
-              </div>
-              {resistance !== null && wounds ? (
-                <p className="result">
-                  Resistencia {resistance} → {woundsText(wounds)}
-                </p>
-              ) : (
-                <p className="muted small">{resistanceError}</p>
-              )}
-              {defender.kind === 'pc' && <p className="muted small">Si tiene barrera, absorbe primero.</p>}
-            </>
-          ) : (
-            <>
-              <NumberField
-                label="Puntos de vida a descontar"
-                integer
-                value={npcPoints}
-                onChange={(v) => setPoints(Math.max(0, v))}
-              />
-              <p className="muted small">Sugerido por la herida: {SUGGESTED_NPC_POINTS[stage.applied]}. Lo decides tú.</p>
+              {' '}
+              → la armadura la baja a <strong>{stage.applied}</strong> y gasta {stage.armorSpent} uso(s)
             </>
           )}
+        </p>
+        <div className="table-wrap" aria-label="Escala del daño">
+          <table className="cmp ref">
+            <thead>
+              <tr>
+                <th>Nivel</th>
+                <th>Diferencia (daño − defensa)</th>
+                <th>Herida</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scaleRows.map((row) => (
+                <tr key={row.category} className={row.category === stage.category ? 'hit' : ''}>
+                  <td className="first">{DAMAGE_LEVEL[row.category]}</td>
+                  <td>{row.range}</td>
+                  <td>{row.category}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-          {message && (
-            <p className="errors" role="alert">
-              {message}
+        {isPc ? (
+          <>
+            <p className="small">
+              Lo que recibe {defender.name} según su resistencia (d8 + 6; con 1 se resta un d6 a 7 y con 8 se suma un d6 a 14):
             </p>
-          )}
+            <div className="table-wrap" aria-label="Tabla de daños">
+              <table className="cmp ref">
+                <thead>
+                  <tr>
+                    <th>Resistencia</th>
+                    <th>Recibe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {WOUND_TABLE.map((row) => (
+                    <tr key={row.min} className={resistance !== null && resistance >= row.min && resistance <= row.max ? 'hit' : ''}>
+                      <td className="first">{rangeText([row.min, row.max])}</td>
+                      <td>{woundsText(row.cells[stage.applied])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid-2">
+              <OptionalNumberField label="d8 de resistencia" value={d8} onChange={setD8} />
+              {(d8 === 1 || d8 === 8) && <OptionalNumberField label="d6 adicional" value={d6} onChange={setD6} />}
+            </div>
+            {resistance !== null && wounds ? (
+              <p className="result">
+                Resistencia {resistance} → {woundsText(wounds)}
+              </p>
+            ) : (
+              <p className="muted small">{resistanceError}</p>
+            )}
+            <p className="muted small">Si tiene barrera, absorbe primero.</p>
+          </>
+        ) : (
+          <>
+            <NumberField
+              label="Puntos de vida a descontar"
+              integer
+              value={npcPoints}
+              onChange={(v) => setPoints(Math.max(0, v))}
+            />
+            <p className="muted small">Sugerido por la herida: {SUGGESTED_NPC_POINTS[stage.applied]}. Lo decides tú.</p>
+          </>
+        )}
+
+        {message && (
+          <p className="errors" role="alert">
+            {message}
+          </p>
+        )}
+        {canDamage ? (
           <button className="btn" onClick={() => void confirm()}>
             Confirmar y aplicar
           </button>
-        </div>
-      )}
+        ) : (
+          <p className="muted small">
+            Para aplicar el daño falta el resultado del impacto (o marcar "Aplicar el daño sin depender de la tirada").
+          </p>
+        )}
+      </div>
 
       {lastAction && (
         <div className="card">
-          <p className="small">Último ataque: {lastAction.text}</p>
+          <p className="small">Última acción: {lastAction.text}</p>
           <button className="btn secondary" onClick={() => void combatRepo.update(combat.id, undoLastAction)}>
-            Deshacer último ataque
+            Deshacer última acción
           </button>
         </div>
       )}
