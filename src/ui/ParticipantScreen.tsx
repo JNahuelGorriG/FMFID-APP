@@ -23,10 +23,13 @@ import type {
   ArmorType,
   Character,
   Combat,
+  Duration,
   DurationUnit,
   EffectType,
+  NpcBarrier,
   NpcParticipantState,
   Participant,
+  PcBarrier,
   PcState,
   Techniques,
   TechniqueTarget,
@@ -125,6 +128,36 @@ const TARGET_OPTIONS: { value: ArmorTarget; label: string }[] = [
 ]
 const RANK_OPTIONS = RANKS.map((r) => ({ value: r.name, label: r.name }))
 
+/** Edita cuánto dura una barrera: en turnos, en rondas o hasta que se agote. */
+function BarrierDuration({
+  index,
+  duration,
+  onChange,
+}: {
+  index: number
+  duration: Duration
+  onChange: (duration: Duration) => void
+}) {
+  return (
+    <div className="grid-2">
+      <SelectField
+        label={`Barrera ${index} dura`}
+        value={duration.unit === 'turnos' || duration.unit === 'rondas' ? duration.unit : 'manual'}
+        options={BARRIER_UNITS}
+        onChange={(unit) => onChange({ unit, remaining: unit === 'manual' ? 0 : Math.max(1, duration.remaining) })}
+      />
+      {(duration.unit === 'turnos' || duration.unit === 'rondas') && (
+        <NumberField
+          label={`Barrera ${index}: duración`}
+          integer
+          value={duration.remaining}
+          onChange={(remaining) => onChange({ ...duration, remaining: Math.max(1, remaining) })}
+        />
+      )}
+    </div>
+  )
+}
+
 function ChangedValues({ rows }: { rows: [string, number, number][] }) {
   if (rows.length === 0) return null
   return (
@@ -220,6 +253,16 @@ function PcPanel({
       return addAlert(next, text)
     })
     setMessage(text)
+  }
+
+  /** Edita una barrera a mano. Si queda en 0 en todo, desaparece. */
+  function editPcBarrier(id: string, patch: Partial<PcBarrier>) {
+    return update((s) => ({
+      ...s,
+      barriers: s.barriers
+        .map((b) => (b.id === id ? { ...b, ...patch } : b))
+        .filter((b) => b.wounds.leve + b.wounds.medio + b.wounds.letal > 0),
+    }))
   }
 
   function addBarrier() {
@@ -434,22 +477,44 @@ function PcPanel({
         <h2>Barreras</h2>
         {state.barriers.length === 0 && <p className="muted small">Sin barreras.</p>}
         <ul className="history">
-          {state.barriers.map((b) => (
-            <li key={b.id} className="effect-row">
-              <span className="grow small">
-                {b.wounds.leve} leves · {b.wounds.medio} medios · {b.wounds.letal} letales ·{' '}
-                {describeDuration(b.duration)}
-              </span>
-              <button
-                className="icon-btn"
-                aria-label="Quitar barrera"
-                onClick={() => void update((s) => ({ ...s, barriers: s.barriers.filter((x) => x.id !== b.id) }))}
-              >
-                ×
-              </button>
+          {state.barriers.map((b, i) => (
+            <li key={b.id} className="barrier-row">
+              <div className="row">
+                <span className="grow small">
+                  Barrera {i + 1} · {describeDuration(b.duration)}
+                </span>
+                <button
+                  className="icon-btn"
+                  aria-label={`Quitar barrera ${i + 1}`}
+                  onClick={() => void update((s) => ({ ...s, barriers: s.barriers.filter((x) => x.id !== b.id) }))}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="grid-3">
+                {(['leve', 'medio', 'letal'] as const).map((key) => (
+                  <Stepper
+                    key={key}
+                    label={`Barrera ${i + 1}: ${key === 'leve' ? 'leves' : key === 'medio' ? 'medios' : 'letales'}`}
+                    value={b.wounds[key]}
+                    onChange={(v) => void editPcBarrier(b.id, { wounds: { ...b.wounds, [key]: v } })}
+                  />
+                ))}
+              </div>
+              <BarrierDuration
+                index={i + 1}
+                duration={b.duration}
+                onChange={(duration) => void editPcBarrier(b.id, { duration })}
+              />
             </li>
           ))}
         </ul>
+        {state.barriers.length > 0 && (
+          <p className="muted small">
+            Cambia lo que le queda a cada barrera (por ejemplo, para descontarle un daño). Si llega a 0 en todo, la barrera
+            desaparece.
+          </p>
+        )}
         <div className="grid-3">
           <NumberField label="Barrera: leves" integer value={bLeve} onChange={setBLeve} />
           <NumberField label="Barrera: medios" integer value={bMedio} onChange={setBMedio} />
@@ -588,6 +653,14 @@ function NpcPanel({
   ]
   for (const [label, n, e] of pairs) if (n !== e) rows.push([label, n, e])
 
+  /** Edita una barrera a mano. Si queda en 0 puntos, desaparece. */
+  function editNpcBarrier(id: string, patch: Partial<NpcBarrier>) {
+    return update((n) => ({
+      ...n,
+      barriers: n.barriers.map((b) => (b.id === id ? { ...b, ...patch } : b)).filter((b) => b.points > 0),
+    }))
+  }
+
   function addBarrier() {
     if (points <= 0) return setMessage('La barrera necesita al menos 1 punto.')
     setMessage('')
@@ -645,21 +718,36 @@ function NpcPanel({
         <h2>Barreras (puntos)</h2>
         {npc.barriers.length === 0 && <p className="muted small">Sin barreras.</p>}
         <ul className="history">
-          {npc.barriers.map((b) => (
-            <li key={b.id} className="effect-row">
-              <span className="grow small">
-                {b.points} punto(s) · {describeDuration(b.duration)}
-              </span>
-              <button
-                className="icon-btn"
-                aria-label="Quitar barrera"
-                onClick={() => void update((n) => ({ ...n, barriers: n.barriers.filter((x) => x.id !== b.id) }))}
-              >
-                ×
-              </button>
+          {npc.barriers.map((b, i) => (
+            <li key={b.id} className="barrier-row">
+              <div className="row">
+                <span className="grow small">
+                  Barrera {i + 1} · {describeDuration(b.duration)}
+                </span>
+                <button
+                  className="icon-btn"
+                  aria-label={`Quitar barrera ${i + 1}`}
+                  onClick={() => void update((n) => ({ ...n, barriers: n.barriers.filter((x) => x.id !== b.id) }))}
+                >
+                  ×
+                </button>
+              </div>
+              <Stepper
+                label={`Barrera ${i + 1}: puntos`}
+                value={b.points}
+                onChange={(v) => void editNpcBarrier(b.id, { points: v })}
+              />
+              <BarrierDuration
+                index={i + 1}
+                duration={b.duration}
+                onChange={(duration) => void editNpcBarrier(b.id, { duration })}
+              />
             </li>
           ))}
         </ul>
+        {npc.barriers.length > 0 && (
+          <p className="muted small">Cambia los puntos que le quedan a cada barrera. Si llega a 0, desaparece.</p>
+        )}
         <div className="grid-2">
           <NumberField label="Barrera: puntos" integer value={points} onChange={setPoints} />
           <SelectField label="Barrera dura" value={unit} options={BARRIER_UNITS} onChange={setUnit} />

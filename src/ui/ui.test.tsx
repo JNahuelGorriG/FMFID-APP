@@ -1088,4 +1088,62 @@ describe('app', () => {
       expect(effects.filter((e) => e.target === 'destreza')).toHaveLength(1)
     })
   })
+
+  it('barreras: la barrera de un jugador se edita a mano sin pasar por el combate', async () => {
+    await openEdwardPanel()
+    fireEvent.change(screen.getByLabelText('Barrera: leves'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Barrera: medios'), { target: { value: '1' } })
+    fireEvent.click(screen.getByText('Agregar barrera'))
+    const barriers = async () => (await combatRepo.list())[0].participants[0].pc?.barriers ?? []
+    await waitFor(async () => expect(await barriers()).toHaveLength(1))
+
+    // recibe 1 daño leve: se le resta ese punto
+    fireEvent.click(await screen.findByLabelText('Barrera 1: leves: menos'))
+    await waitFor(async () => expect((await barriers())[0].wounds).toEqual({ leve: 2, medio: 1, letal: 0 }))
+
+    // también se puede subir
+    fireEvent.click(screen.getByLabelText('Barrera 1: letales: más'))
+    await waitFor(async () => expect((await barriers())[0].wounds).toEqual({ leve: 2, medio: 1, letal: 1 }))
+
+    // la duración se cambia
+    fireEvent.change(screen.getByLabelText('Barrera 1: duración'), { target: { value: '5' } })
+    await waitFor(async () => expect((await barriers())[0].duration).toEqual({ unit: 'rondas', remaining: 5 }))
+    fireEvent.change(screen.getByLabelText('Barrera 1 dura'), { target: { value: 'manual' } })
+    await waitFor(async () => expect((await barriers())[0].duration.unit).toBe('manual'))
+  })
+
+  it('barreras: si una barrera queda en 0 en todo, desaparece', async () => {
+    await openEdwardPanel()
+    fireEvent.change(screen.getByLabelText('Barrera: leves'), { target: { value: '1' } })
+    fireEvent.click(screen.getByText('Agregar barrera'))
+    const barriers = async () => (await combatRepo.list())[0].participants[0].pc?.barriers ?? []
+    await waitFor(async () => expect(await barriers()).toHaveLength(1))
+
+    fireEvent.click(await screen.findByLabelText('Barrera 1: leves: menos'))
+    await waitFor(async () => expect(await barriers()).toHaveLength(0))
+    await waitFor(() => expect(screen.queryByText(/Barrera 1 ·/)).toBeNull())
+  })
+
+  it('barreras: la barrera de un NPC (en puntos) también se edita a mano', async () => {
+    await setUpDuel()
+    goTo('Turnos')
+    const names = await waitFor(() => {
+      const els = Array.from(document.querySelectorAll('.participant .name'))
+      if (els.length < 2) throw new Error('faltan participantes')
+      return els
+    })
+    fireEvent.click(names[1]) // el Goblin
+    fireEvent.change(await screen.findByLabelText('Barrera: puntos'), { target: { value: '5' } })
+    fireEvent.click(screen.getByText('Agregar barrera'))
+    const points = async () => (await combatRepo.list())[0].participants.find((p) => p.name === 'Goblin')?.npc?.barriers ?? []
+    await waitFor(async () => expect(await points()).toHaveLength(1))
+
+    fireEvent.click(await screen.findByLabelText('Barrera 1: puntos: menos'))
+    await waitFor(async () => expect((await points())[0].points).toBe(4))
+    for (let i = 3; i >= 0; i--) {
+      fireEvent.click(screen.getByLabelText('Barrera 1: puntos: menos'))
+      if (i > 0) await waitFor(async () => expect((await points())[0].points).toBe(i))
+    }
+    await waitFor(async () => expect(await points()).toHaveLength(0))
+  })
 })

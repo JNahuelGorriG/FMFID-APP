@@ -16,14 +16,14 @@ interface Props {
   onDeleted: () => void
 }
 
-type Section = 'turnos' | 'agregar' | 'comparar' | 'checks' | 'ataque'
+type Section = 'turnos' | 'ataque' | 'comparar' | 'checks' | 'agregar' 
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'turnos', label: 'Turnos' },
+  { id: 'ataque', label: 'Ataque' },
   { id: 'agregar', label: 'Agregar' },
   { id: 'comparar', label: 'Comparar' },
   { id: 'checks', label: 'Checks' },
-  { id: 'ataque', label: 'Ataque' },
 ]
 
 export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props) {
@@ -71,10 +71,10 @@ export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props
           }}
         />
       )}
-      {section === 'agregar' && <AddView combat={combat} />}
+      {section === 'ataque' && <AttackView combat={combat} profiles={profiles} />}
       {section === 'comparar' && <CompareView profiles={profiles} />}
       {section === 'checks' && <ChecksView profiles={profiles} />}
-      {section === 'ataque' && <AttackView combat={combat} profiles={profiles} />}
+      {section === 'agregar' && <AddView combat={combat} />}
     </section>
   )
 }
