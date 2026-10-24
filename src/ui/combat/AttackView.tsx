@@ -20,7 +20,8 @@ import {
   updateParticipant,
   woundsForPc,
 } from '../../rules'
-import type { AttackType, Combat, Profile, StatName, WoundCategory } from '../../rules'
+import { TECHNIQUES } from '../../rules'
+import type { AttackType, Combat, Profile, StatName, Techniques, WoundCategory } from '../../rules'
 import { combatRepo } from '../data'
 import { NumberField, OptionalNumberField, SelectField } from '../fields'
 import { GROUP_LABELS, LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, withRank, woundsText } from '../format'
@@ -59,6 +60,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const [damage, setDamage] = useState<number | undefined>(undefined)
   const [defense, setDefense] = useState<number | undefined>(undefined)
   const [defenseChoice, setDefenseChoice] = useState<AttackType | null>(null)
+  const [boosts, setBoosts] = useState<(keyof Techniques)[]>([])
   const [d8, setD8] = useState<number | undefined>(undefined)
   const [d6, setD6] = useState<number | undefined>(undefined)
   const [points, setPoints] = useState<number | undefined>(undefined)
@@ -89,9 +91,15 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
 
   // Defensa que participa: por defecto la del mismo tipo que el ataque, pero se puede elegir la otra.
   const defenseType: AttackType = defenseChoice ?? type
-  const stage = damageStage(attacker, defender, type, { damage, defense }, defenseType)
+  // Potenciaciones que se pueden sumar al daño: Esencia y E. Reinforced al físico, Kyushu y Magyushuru al mágico.
+  const boostKeys: (keyof Techniques)[] = type === 'fisico' ? ['esencia', 'eReinforced'] : ['kyushu', 'magyushuru']
+  const activeBoosts = boostKeys.filter((k) => boosts.includes(k))
+  const extra = activeBoosts.reduce((sum, k) => sum + attacker.techniques[k], 0)
+  const techniqueName = (k: keyof Techniques) => TECHNIQUES.find((t) => t.key === k)?.name ?? k
+  const parts = attacker.damageParts[type]
+  const stage = damageStage(attacker, defender, type, { damage, defense, extra }, defenseType)
   const stageFor = (dt: AttackType) =>
-    damageStage(attacker, defender, type, { damage, defense: dt === defenseType ? defense : undefined }, dt)
+    damageStage(attacker, defender, type, { damage, defense: dt === defenseType ? defense : undefined, extra }, dt)
   const checks: { type: AttackType; label: string; stage: ReturnType<typeof damageStage> }[] = [
     { type: 'fisico', label: 'Defensa física', stage: stageFor('fisico') },
     { type: 'magico', label: 'Defensa mágica', stage: stageFor('magico') },
@@ -129,6 +137,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     setDamage(undefined)
     setDefense(undefined)
     setDefenseChoice(null)
+    setBoosts([])
     setD8(undefined)
     setD6(undefined)
     setPoints(undefined)
@@ -142,6 +151,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     setDamage(undefined)
     setDefense(undefined)
     setDefenseChoice(null)
+    setBoosts([])
   }
 
   async function registerMiss() {
@@ -284,11 +294,40 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           Por defecto se enfrenta el daño {type === 'fisico' ? 'físico' : 'mágico'} contra la defensa {type === 'fisico' ? 'física' : 'mágica'}. La escala es la de{' '}
           {defender.name} ({defender.rankName ?? 'sin rango'}, grupo {GROUP_LABELS[defender.group]}).
         </p>
+        <p className="small" aria-label="Origen del daño">
+          Daño {type === 'fisico' ? 'físico' : 'mágico'} de {attacker.name}: <strong>{fmt(attacker.damage[type] + extra)}</strong> = base{' '}
+          {fmt(parts.base)}
+          {attacker.weapon && parts.weapon !== 0 && (
+            <>
+              {' '}
+              + {attacker.weapon.equipped ? `arma ${attacker.weapon.label}` : 'arma de referencia'} {fmt(parts.weapon)}
+            </>
+          )}
+          {activeBoosts.map((k) => (
+            <span key={k}>
+              {' '}
+              + {techniqueName(k)} {fmt(attacker.techniques[k])}
+            </span>
+          ))}
+        </p>
+        <div role="group" aria-label="Sumar al daño">
+          {boostKeys.map((k) => (
+            <label key={k} className="check">
+              <input
+                type="checkbox"
+                aria-label={`Sumar ${techniqueName(k)}`}
+                checked={boosts.includes(k)}
+                onChange={(e) => setBoosts((prev) => (e.target.checked ? [...prev, k] : prev.filter((x) => x !== k)))}
+              />
+              Sumar {techniqueName(k)} (+{fmt(attacker.techniques[k])})
+            </label>
+          ))}
+        </div>
         <div className="grid-2">
           <OptionalNumberField
             label="Daño"
             value={damage}
-            placeholder={fmt(attacker.damage[type])}
+            placeholder={fmt(attacker.damage[type] + extra)}
             onChange={setDamage}
           />
           <OptionalNumberField

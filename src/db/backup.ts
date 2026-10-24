@@ -3,7 +3,7 @@ import { migrateCombat, normalizeCombat, normalizeNpc } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
 import type { Character, Combat, Npc } from '../rules'
 
-export const BACKUP_VERSION = 6
+export const BACKUP_VERSION = 7
 
 export interface BackupFile {
   app: 'fmfid-app'

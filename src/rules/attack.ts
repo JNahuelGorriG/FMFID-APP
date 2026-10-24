@@ -55,16 +55,17 @@ export interface DamageStage {
  * herida (con la fila del rango del defensor), y la armadura la baja un nivel.
  * `type` es el tipo de daño del ataque. La defensa que participa es la del mismo tipo salvo que se
  * indique otra (`defenseType`): por ejemplo, daño físico contra la defensa mágica.
- * Se puede pasar un daño o defensa a mano para corregir los calculados.
+ * `extra` suma al daño (Escencia, Kyushu...). Se puede pasar un daño o defensa a mano para corregir los
+ * calculados; un daño a mano reemplaza al calculado, extras incluidos.
  */
 export function damageStage(
   attacker: Profile,
   defender: Profile,
   type: AttackType,
-  override: { damage?: number; defense?: number } = {},
+  override: { damage?: number; defense?: number; extra?: number } = {},
   defenseType: AttackType = type,
 ): DamageStage {
-  const damage = override.damage ?? attacker.damage[type]
+  const damage = override.damage ?? attacker.damage[type] + (override.extra ?? 0)
   const base = defenseAgainst(defender, defenseType)
   const defense = override.defense ?? base.value
   const category = woundCategory(damage, defense, defender.group)

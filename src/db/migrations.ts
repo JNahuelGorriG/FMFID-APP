@@ -35,7 +35,7 @@ export function migrateCombat(
     const legacy = states.find((s) => s.characterId === p.characterId)
     if (legacy) {
       const { characterId: _id, ...rest } = legacy
-      return { ...p, side, pc: { ...rest, armor: null, saturation: 0 } }
+      return { ...p, side, pc: { ...rest, armor: null, weapon: null, saturation: 0 } }
     }
     const character = characters.find((c) => c.id === p.characterId)
     return { ...p, side, pc: character ? initialPcState(character) : null }
@@ -57,11 +57,12 @@ export function normalizeCombat(combat: Combat): Combat {
             pc: {
               ...p.pc,
               saturation: p.pc.saturation ?? 0,
+              weapon: p.pc.weapon ?? null,
               armor: p.pc.armor ? { ...p.pc.armor, bonusTarget: p.pc.armor.bonusTarget ?? 'fisica' } : null,
             },
           }
         : p.npc
-          ? { ...p, npc: { ...p.npc, saturation: p.npc.saturation ?? 0 } }
+          ? { ...p, npc: { ...p.npc, saturation: p.npc.saturation ?? 0, weapon: p.npc.weapon ?? null } }
           : p,
     ),
   }

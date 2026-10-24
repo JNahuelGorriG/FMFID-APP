@@ -878,9 +878,11 @@ describe('app', () => {
     goTo('Ataque')
     fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: before.participants.find((p) => p.name === 'Goblin')!.id } })
 
-    const card = await screen.findByLabelText('Daño contra defensa')
     // defensa física: CA 447,6 + armadura 130 = 577,6 (con armadura)
-    expect(card.textContent).toContain('Defensa física: 577,6 (CA 447,6 + armadura 130)')
+    await waitFor(() =>
+      expect(screen.getByLabelText('Daño contra defensa').textContent).toContain('Defensa física: 577,6 (CA 447,6 + armadura 130)'),
+    )
+    const card = screen.getByLabelText('Daño contra defensa')
     // defensa mágica: la armadura no suma
     expect(card.textContent).toContain('Defensa mágica:')
     expect(screen.getByLabelText('Defensa física participa')).toHaveProperty('checked', true)
@@ -902,6 +904,84 @@ describe('app', () => {
     )
     goTo('Ataque')
     fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: before.participants.find((p) => p.name === 'Goblin')!.id } })
-    expect((await screen.findByLabelText('Daño contra defensa')).textContent).toContain('Defensa física: 497,6 (CA 447,6 + armadura 50)')
+    await waitFor(() =>
+      expect(screen.getByLabelText('Daño contra defensa').textContent).toContain('Defensa física: 497,6 (CA 447,6 + armadura 50)'),
+    )
+  })
+
+  it('arma: se equipa y se completa sola con la tabla de armas al elegir tamaño y rango', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+
+    fireEvent.click(await screen.findByText('Equipar arma'))
+    // Edward es C+: arma mediana C+ suma 80
+    await waitFor(() => expect(screen.getByText(/Arma equipada: Mediana C\+ · suma 80 al daño físico/)).toBeTruthy())
+
+    fireEvent.change(screen.getByLabelText('Tamaño del arma'), { target: { value: 'grande' } })
+    fireEvent.change(await screen.findByLabelText('Rango del arma'), { target: { value: 'B' } })
+    fireEvent.change(screen.getByLabelText('El arma suma a'), { target: { value: 'ambos' } })
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants[0].pc?.weapon).toEqual({ size: 'grande', rank: 'B', bonus: 120, bonusTarget: 'ambos' })
+    })
+
+    fireEvent.click(screen.getByText('Quitar arma'))
+    await waitFor(async () => expect((await combatRepo.list())[0].participants[0].pc?.weapon).toBeNull())
+  })
+
+  it('arma: un NPC también puede equipar un arma', async () => {
+    await setUpDuel()
+    goTo('Turnos')
+    const names = await waitFor(() => {
+      const els = Array.from(document.querySelectorAll('.participant .name'))
+      if (els.length < 2) throw new Error('faltan participantes')
+      return els
+    })
+    fireEvent.click(names[1]) // el Goblin
+    fireEvent.click(await screen.findByText('Equipar arma'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.weapon).toMatchObject({ size: 'mediana', rank: 'C+' })
+    })
+  })
+
+  it('ataque: el arma equipada y las potenciaciones se ven en el origen del daño y lo suman', async () => {
+    await setUpDuel()
+    const [before] = await combatRepo.list()
+    const edwardId = before.participants.find((p) => p.name === 'Edward')!.id
+    await combatRepo.update(before.id, (c) =>
+      updateParticipant(c, edwardId, (p) => ({
+        ...p,
+        pc: p.pc ? { ...p.pc, weapon: { size: 'grande', rank: 'C', bonus: 80, bonusTarget: 'fisico' } } : null,
+      })),
+    )
+    goTo('Ataque')
+    // el arma se guardó recién: se espera a que la pantalla muestre el estado actualizado
+    await waitFor(() => {
+      const origin = within(screen.getByLabelText('Daño contra defensa')).getByLabelText('Origen del daño')
+      expect(origin.textContent).toContain('405,9 = base 325,9 + arma Grande C 80') // base 325,9 + arma 80
+    })
+
+    // Esencia (+34) y E. Reinforced (+66) para el daño físico
+    fireEvent.click(screen.getByLabelText('Sumar Esencia'))
+    fireEvent.click(screen.getByLabelText('Sumar E. Reinforced'))
+    await waitFor(() => {
+      const text = within(screen.getByLabelText('Daño contra defensa')).getByLabelText('Origen del daño').textContent ?? ''
+      expect(text).toContain('505,9')
+      expect(text).toContain('+ Esencia 34')
+      expect(text).toContain('+ E. Reinforced 66')
+    })
+    // 505,9 contra la defensa SA 380 del Goblin: +125,9
+    expect(screen.getByLabelText('Daño contra defensa').textContent).toContain('diferencia +125,9')
+
+    // para el daño mágico las opciones son Kyushu y Magyushuru
+    fireEvent.change(screen.getByLabelText('Tipo de ataque'), { target: { value: 'magico' } })
+    expect(await screen.findByLabelText('Sumar Kyushu')).toBeTruthy()
+    expect(screen.getByLabelText('Sumar Magyushuru')).toBeTruthy()
+    expect(screen.queryByLabelText('Sumar Esencia')).toBeNull()
   })
 })

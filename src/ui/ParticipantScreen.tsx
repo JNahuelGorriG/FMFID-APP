@@ -35,6 +35,7 @@ import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
 import { clampSaturation } from '../rules'
 import { SaturationCard } from './SaturationCard'
+import { WeaponCard } from './WeaponCard'
 import { NumberField, SelectField, Stepper } from './fields'
 import { STAT_LABELS, describeDuration, fmt, woundsText } from './format'
 
@@ -423,6 +424,12 @@ function PcPanel({
         )}
       </div>
 
+      <WeaponCard
+        weapon={state.weapon ?? null}
+        defaultRank={sheet.rank?.name ?? 'E'}
+        onChange={(change) => void update((s) => ({ ...s, weapon: change(s.weapon ?? null) }))}
+      />
+
       <div className="card">
         <h2>Barreras</h2>
         {state.barriers.length === 0 && <p className="muted small">Sin barreras.</p>}
@@ -626,6 +633,12 @@ function NpcPanel({
         value={npc.saturation ?? 0}
         onSet={(v) => void update((n) => ({ ...n, saturation: clampSaturation(v) }))}
         onAdd={(d) => void update((n) => ({ ...n, saturation: clampSaturation((n.saturation ?? 0) + d) }))}
+      />
+
+      <WeaponCard
+        weapon={npc.weapon ?? null}
+        defaultRank={npc.profile.rank}
+        onChange={(change) => void update((n) => ({ ...n, weapon: change(n.weapon ?? null) }))}
       />
 
       <div className="card">

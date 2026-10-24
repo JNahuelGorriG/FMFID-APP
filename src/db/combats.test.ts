@@ -362,3 +362,40 @@ describe('actualizar desde el Excel', () => {
 function newNpcFile(name: string) {
   return { ...newNpcTemplate(), id: `id-${name}`, name, createdAt: '', updatedAt: '' }
 }
+
+describe('actualización de la base desde la versión 6', () => {
+  it('los participantes de los combates reciben el arma en blanco', async () => {
+    const name = `test-${crypto.randomUUID()}`
+    const old = new Dexie(name)
+    old.version(6).stores({
+      characters: 'id, name, playerName, retired',
+      changes: 'id, characterId, at',
+      npcs: 'id, name, kind, rank, realm, guild, race',
+      combats: 'id, status, updatedAt',
+      settings: 'key',
+    })
+    const pc = {
+      health: { leve: 8, medio: 5, letal: 2 }, barriers: [], mana: { natural: 1, renovable: 1 },
+      stamina: { natural: 1, renovable: 1 }, saves: { current: 2, max: 2, unique: 0, battery: 0 }, effects: [],
+      armor: null, saturation: 0,
+    }
+    await old.table('combats').add({
+      id: 'c1', name: 'Viejo', status: 'activo', round: 1, activeId: null, alerts: [], history: [],
+      createdAt: '', updatedAt: '',
+      participants: [
+        { id: 'p1', kind: 'pc', characterId: 'x', name: 'Roy', side: 'jugador', initiative: 5, npc: null, pc },
+        {
+          id: 'p2', kind: 'npc', characterId: null, name: 'Goblin', side: 'enemigo', initiative: 1, pc: null,
+          npc: { profile: defaultEnemyProfile('D'), hpCurrent: 5, hpMax: 10, barriers: [], effects: [], saturation: 0 },
+        },
+      ],
+    })
+    old.close()
+
+    const upgraded = new AppDB(name)
+    const [roy, goblin] = (await upgraded.combats.get('c1'))!.participants
+    expect(roy.pc?.weapon).toBeNull()
+    expect(goblin.npc?.weapon).toBeNull()
+    upgraded.close()
+  })
+})

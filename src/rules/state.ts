@@ -6,8 +6,8 @@ import type { Saves } from './saves'
 import { defaultSaves } from './saves'
 import type { Character } from './character'
 import { characterSheet } from './character'
-import { armorBonus, armorUsesFor } from './equipment'
-import type { ArmorType } from './equipment'
+import { armorBonus, armorUsesFor, weaponBonus } from './equipment'
+import type { ArmorType, WeaponSize } from './equipment'
 import { RANKS } from './ranks'
 
 export interface EnergyPools {
@@ -40,6 +40,25 @@ export function armorFromTable(type: ArmorType, rank: string): ArmorState {
   return { type, rank: found.name, bonus: armorBonus(found, type), bonusTarget: 'fisica', usesMax: uses, usesLeft: uses }
 }
 
+export type WeaponTarget = 'fisico' | 'magico' | 'ambos'
+
+/** Arma equipada en un combate. Su valor se suma al daño base del combatiente. */
+export interface WeaponState {
+  size: WeaponSize
+  /** Rango del arma (E a SSS+). */
+  rank: string
+  /** Valor que suma al daño. Sale de la tabla de armas y el GM lo puede editar. */
+  bonus: number
+  /** A qué daño suma: físico, mágico o ambos. */
+  bonusTarget: WeaponTarget
+}
+
+/** Arma con el valor de la tabla de armas para ese tamaño y rango. Por defecto suma al daño físico. */
+export function weaponFromTable(size: WeaponSize, rank: string): WeaponState {
+  const found = RANKS.find((r) => r.name === rank) ?? RANKS[0]
+  return { size, rank: found.name, bonus: weaponBonus(found, size), bonusTarget: 'fisico' }
+}
+
 /**
  * Estado de un jugador dentro de UN combate. Cada combate tiene el suyo: lo que pasa en
  * un campo de batalla no afecta a otro.
@@ -52,6 +71,8 @@ export interface PcState {
   saves: Saves
   effects: Effect[]
   armor: ArmorState | null
+  /** Arma equipada. Sin ella, el daño usa el arma de referencia del personaje. */
+  weapon: WeaponState | null
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
 }
@@ -67,6 +88,7 @@ export function initialPcState(character: Character): PcState {
     saves: defaultSaves(),
     effects: [],
     armor: null,
+    weapon: null,
     saturation: 0,
   }
 }
@@ -78,6 +100,8 @@ export interface NpcParticipantState {
   hpMax: number
   barriers: NpcBarrier[]
   effects: Effect[]
+  /** Arma equipada. Sin ella, el daño usa el arma de referencia de su perfil. */
+  weapon: WeaponState | null
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
 }
@@ -89,6 +113,7 @@ export function initialNpcState(profile: EnemyProfile): NpcParticipantState {
     hpMax: profile.hp.max,
     barriers: [],
     effects: [],
+    weapon: null,
     saturation: 0,
   }
 }

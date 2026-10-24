@@ -16,6 +16,7 @@ import {
   outcomeRanges,
   clampSaturation,
   saturationFor,
+  weaponFromTable,
   isHit,
   newCombat,
   resolveHit,
@@ -378,5 +379,89 @@ describe('armadura sin usos cargados y defensa elegible', () => {
     expect(physical.defense).toBeCloseTo(497.64, 2) // CA física + armadura
     expect(magical.defense).toBeCloseTo(defender.defense.magico.ca, 2) // la armadura suma solo a la física
     expect(damageStage(attacker, defender, 'fisico').defense).toBe(physical.defense) // por defecto, la del mismo tipo
+  })
+})
+
+describe('arma equipada', () => {
+  const equip = (weapon: object | null, who: 'pc' | 'npc' = 'pc') => {
+    const { combat, pc: pcId, npc: npcId } = arena()
+    const id = who === 'pc' ? pcId : npcId
+    const next = updateParticipant(combat, id, (p) => ({
+      ...p,
+      pc: p.pc ? { ...p.pc, weapon: weapon as never } : null,
+      npc: p.npc ? { ...p.npc, weapon: weapon as never } : null,
+    }))
+    return buildProfile(next.participants.find((p) => p.id === id)!, edward)!
+  }
+
+  it('la arma se arma desde la tabla de armas', () => {
+    expect(weaponFromTable('grande', 'C')).toEqual({ size: 'grande', rank: 'C', bonus: 80, bonusTarget: 'fisico' })
+    expect(weaponFromTable('pesada', 'B')).toMatchObject({ bonus: 195 })
+    expect(weaponFromTable('pequena', 'SSS+').bonus).toBe(340)
+  })
+
+  it('sin arma equipada el daño usa el arma de referencia del personaje', () => {
+    const p = equip(null)
+    expect(p.damage.fisico).toBeCloseTo(485.898, 3)
+    expect(p.weapon).toEqual({ label: 'arma de referencia', equipped: false })
+    expect(p.damageParts.fisico.weapon).toBeCloseTo(160, 3)
+  })
+
+  it('con arma equipada el daño es el base más el valor de esa arma', () => {
+    const p = equip(weaponFromTable('grande', 'C'))
+    expect(p.damage.fisico).toBeCloseTo(325.898 + 80, 3)
+    expect(p.damageParts.fisico.base).toBeCloseTo(325.898, 3)
+    expect(p.damageParts.fisico.weapon).toBe(80)
+    expect(p.weapon).toEqual({ label: 'Grande C', equipped: true })
+  })
+
+  it('el valor del arma se puede editar a mano', () => {
+    const p = equip({ ...weaponFromTable('grande', 'C'), bonus: 123 })
+    expect(p.damage.fisico).toBeCloseTo(325.898 + 123, 3)
+  })
+
+  it('el arma suma solo al daño al que apunta', () => {
+    const phys = equip({ ...weaponFromTable('grande', 'C'), bonusTarget: 'fisico' })
+    expect(phys.damage.magico).toBeCloseTo(phys.damageParts.magico.base, 6) // Edward no tiene arma mágica de referencia
+
+    const magic = equip({ ...weaponFromTable('grande', 'C'), bonusTarget: 'magico' })
+    expect(magic.damage.fisico).toBeCloseTo(485.898, 3) // vuelve a la referencia
+    expect(magic.damage.magico).toBeCloseTo(magic.damageParts.magico.base + 80, 6)
+
+    const both = equip({ ...weaponFromTable('grande', 'C'), bonusTarget: 'ambos' })
+    expect(both.damage.fisico).toBeCloseTo(325.898 + 80, 3)
+    expect(both.damage.magico).toBeCloseTo(both.damageParts.magico.base + 80, 6)
+  })
+
+  it('un NPC con arma equipada: base más arma, redondeado hacia arriba a 5', () => {
+    const base = equip(null, 'npc')
+    expect(base.damage.fisico).toBe(430) // referencia del perfil (C+ con arma grande)
+    expect(base.weapon).toEqual({ label: 'arma de referencia', equipped: false })
+
+    const armed = equip(weaponFromTable('pesada', 'B'), 'npc') // 350 + 195 = 545
+    expect(armed.damage.fisico).toBe(545)
+    expect(armed.damageParts.fisico).toEqual({ base: 350, weapon: 195 })
+    expect(armed.weapon).toEqual({ label: 'Pesada B', equipped: true })
+
+    expect(equip({ ...weaponFromTable('pesada', 'B'), bonus: 101 }, 'npc').damage.fisico).toBe(455) // 451 → 455
+  })
+
+  it('el perfil trae las potenciaciones para sumarlas al daño', () => {
+    const p = equip(null)
+    expect(p.techniques.esencia).toBe(34)
+    expect(p.techniques.eReinforced).toBe(66)
+    expect(p.techniques.kyushu).toBe(25)
+    expect(equip(null, 'npc').techniques.ki).toBeGreaterThan(0)
+  })
+
+  it('las potenciaciones suman al daño de la etapa de daño', () => {
+    const { combat } = arena()
+    const attacker = buildProfile(combat.participants[0], edward)!
+    const defender = buildProfile(combat.participants[1])!
+    const plain = damageStage(attacker, defender, 'fisico')
+    const boosted = damageStage(attacker, defender, 'fisico', { extra: attacker.techniques.esencia + attacker.techniques.eReinforced })
+    expect(boosted.damage).toBeCloseTo(plain.damage + 34 + 66, 6)
+    // un daño puesto a mano reemplaza al calculado, extras incluidos
+    expect(damageStage(attacker, defender, 'fisico', { damage: 1000, extra: 50 }).damage).toBe(1000)
   })
 })

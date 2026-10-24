@@ -1,10 +1,12 @@
 import { characterSheet } from './character'
 import type { Character } from './character'
 import type { Participant, Side } from './combat'
+import type { Techniques } from './derived'
+import { ceilTo } from './energy'
 import { effectiveCharacter, effectiveEnemy } from './effective'
 import { RANKS } from './ranks'
 import type { RankGroup } from './ranks'
-import type { ArmorState } from './state'
+import type { ArmorState, WeaponState } from './state'
 import type { Stats } from './types'
 
 export type AttackType = 'fisico' | 'magico'
@@ -19,12 +21,28 @@ export interface Profile {
   /** Fila de la tabla de umbrales. Sin rango se usa "bajo". */
   group: RankGroup
   stats: Stats
-  /** Daño con arma si el combatiente usa una, y si no el daño base. */
+  /**
+   * Daño del ataque sin extras: el base más el arma. Con un arma equipada, el valor de esa arma.
+   * Sin ella, el del arma de referencia (o solo el base si no usa arma).
+   */
   damage: Record<AttackType, number>
+  /** El daño separado en base y arma, para mostrar de dónde sale. */
+  damageParts: Record<AttackType, { base: number; weapon: number }>
+  /** El arma que cuenta: equipada o de referencia. null si no usa arma. */
+  weapon: { label: string; equipped: boolean } | null
+  /** Potenciaciones naturales (Escencia, Kyushu...), que se pueden sumar al daño. */
+  techniques: Techniques
   defense: Record<AttackType, { ca: number; sa: number }>
   armor: ArmorState | null
   health: string
 }
+
+const SIZE_LABELS = { pequena: 'Pequeña', mediana: 'Mediana', grande: 'Grande', pesada: 'Pesada' } as const
+
+const weaponApplies = (weapon: WeaponState, type: AttackType): boolean =>
+  weapon.bonusTarget === 'ambos' || weapon.bonusTarget === type
+
+const weaponLabel = (weapon: WeaponState): string => `${SIZE_LABELS[weapon.size]} ${weapon.rank}`
 
 /**
  * Arma el perfil de un participante. Para un jugador hace falta su personaje;
@@ -36,6 +54,15 @@ export function buildProfile(participant: Participant, character?: Character): P
     const view = effectiveCharacter(character, participant.pc.effects)
     const d = view.derived
     const h = participant.pc.health
+    const weapon = participant.pc.weapon
+    const reference = { fisico: d.physDamageWithWeapon, magico: d.magicDamageWithWeapon }
+    const base = { fisico: d.physDamage, magico: d.magicDamage }
+    const damage = {} as Record<AttackType, number>
+    const parts = {} as Record<AttackType, { base: number; weapon: number }>
+    for (const t of ['fisico', 'magico'] as const) {
+      damage[t] = weapon && weaponApplies(weapon, t) ? base[t] + weapon.bonus : (reference[t] ?? base[t])
+      parts[t] = { base: base[t], weapon: damage[t] - base[t] }
+    }
     return {
       participantId: participant.id,
       name: participant.name,
@@ -44,10 +71,14 @@ export function buildProfile(participant: Participant, character?: Character): P
       rankName: view.natural.rank?.name ?? null,
       group: view.natural.rank?.group ?? 'bajo',
       stats: view.stats,
-      damage: {
-        fisico: d.physDamageWithWeapon ?? d.physDamage,
-        magico: d.magicDamageWithWeapon ?? d.magicDamage,
-      },
+      damage,
+      damageParts: parts,
+      weapon: weapon
+        ? { label: weaponLabel(weapon), equipped: true }
+        : d.physDamageWithWeapon !== null || d.magicDamageWithWeapon !== null
+          ? { label: 'arma de referencia', equipped: false }
+          : null,
+      techniques: view.natural.derived.techniques,
       defense: {
         fisico: { ca: d.physDefenseCA, sa: d.physDefenseSA },
         magico: { ca: d.magicDefenseCA, sa: d.magicDefenseSA },
@@ -61,6 +92,16 @@ export function buildProfile(participant: Participant, character?: Character): P
     const view = effectiveEnemy(n.profile, n.effects)
     const s = view.sheet
     const rank = RANKS.find((r) => r.name === n.profile.rank)
+    const weapon = n.weapon
+    const reference = { fisico: s.physDamageWithWeapon, magico: s.magicDamageWithWeapon }
+    const base = { fisico: s.physDamage, magico: s.magicDamage }
+    const damage = {} as Record<AttackType, number>
+    const parts = {} as Record<AttackType, { base: number; weapon: number }>
+    for (const t of ['fisico', 'magico'] as const) {
+      // Como en la calculadora de enemigos, el daño con arma se redondea hacia arriba a múltiplos de 5.
+      damage[t] = weapon && weaponApplies(weapon, t) ? ceilTo(base[t] + weapon.bonus, 5) : reference[t]
+      parts[t] = { base: base[t], weapon: damage[t] - base[t] }
+    }
     return {
       participantId: participant.id,
       name: participant.name,
@@ -69,7 +110,10 @@ export function buildProfile(participant: Participant, character?: Character): P
       rankName: rank?.name ?? null,
       group: rank?.group ?? 'bajo',
       stats: view.stats,
-      damage: { fisico: s.physDamageWithWeapon, magico: s.magicDamageWithWeapon },
+      damage,
+      damageParts: parts,
+      weapon: weapon ? { label: weaponLabel(weapon), equipped: true } : { label: 'arma de referencia', equipped: false },
+      techniques: view.natural.techniques,
       defense: {
         fisico: { ca: s.physDefenseCA, sa: s.physDefenseSA },
         magico: { ca: s.magicDefenseCA, sa: s.magicDefenseSA },
