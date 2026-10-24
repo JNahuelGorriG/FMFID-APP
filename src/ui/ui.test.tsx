@@ -585,7 +585,7 @@ describe('app', () => {
     // depende de cómo la use el jugador: hay que elegir a qué stat suma
     fireEvent.click(screen.getByText('Aplicar potenciación'))
     expect((await screen.findByRole('alert')).textContent).toContain('Elige a qué stat suma')
-    fireEvent.change(screen.getByLabelText('Suma a'), { target: { value: 'inteligencia' } })
+    fireEvent.click(screen.getByLabelText('Suma a Inteligencia'))
     fireEvent.click(screen.getByText('Aplicar potenciación'))
 
     await waitFor(async () => {
@@ -614,7 +614,7 @@ describe('app', () => {
     await openFirstParticipant()
 
     fireEvent.change(await screen.findByLabelText('Potenciación'), { target: { value: 'ki' } })
-    fireEvent.change(screen.getByLabelText('Suma a'), { target: { value: 'constitucion' } })
+    fireEvent.click(screen.getByLabelText('Suma a Constitución'))
     fireEvent.click(screen.getByText('Aplicar potenciación'))
     await waitFor(async () => {
       const [c] = await combatRepo.list()
@@ -983,5 +983,109 @@ describe('app', () => {
     expect(await screen.findByLabelText('Sumar Kyushu')).toBeTruthy()
     expect(screen.getByLabelText('Sumar Magyushuru')).toBeTruthy()
     expect(screen.queryByLabelText('Sumar Esencia')).toBeNull()
+  })
+
+  /** Agrega a Edward a un combate nuevo y abre su panel. */
+  async function openEdwardPanel() {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+    await screen.findByLabelText('Afecta a Fuerza')
+  }
+  const edwardEffects = async () => (await combatRepo.list())[0].participants[0].pc?.effects ?? []
+
+  it('buffs: un mismo buff se aplica a varios stats de una vez', async () => {
+    await openEdwardPanel()
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Bendición' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '20' } })
+    expect((screen.getByLabelText('Afecta a Fuerza') as HTMLInputElement).checked).toBe(true) // por defecto
+    fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
+    fireEvent.click(screen.getByLabelText('Afecta a Defensa física'))
+    fireEvent.click(screen.getByText('Agregar efecto'))
+
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(3))
+    const effects = await edwardEffects()
+    expect(effects.map((e) => e.target).sort()).toEqual(['defensaFisica', 'destreza', 'fuerza'])
+    expect(effects.every((e) => e.name === 'Bendición' && e.flat === 20 && e.kind === 'buff')).toBe(true)
+    expect(new Set(effects.map((e) => e.id)).size).toBe(3)
+  })
+
+  it('debuffs: "Los 7 stats" los elige todos, y sin ninguno avisa', async () => {
+    await openEdwardPanel()
+    fireEvent.change(screen.getByLabelText('Clase'), { target: { value: 'debuff' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
+
+    fireEvent.click(screen.getAllByText('Limpiar')[1]) // el selector manual es el segundo
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Elige al menos un stat')
+    expect(await edwardEffects()).toEqual([])
+
+    fireEvent.click(screen.getAllByText('Los 7 stats')[1])
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(7))
+    expect((await edwardEffects()).every((e) => e.kind === 'debuff')).toBe(true)
+  })
+
+  it('potenciaciones: una potenciación suma a varios stats a la vez', async () => {
+    await openEdwardPanel()
+    fireEvent.change(screen.getByLabelText('Potenciación'), { target: { value: 'kyushu' } })
+    fireEvent.click(screen.getByLabelText('Suma a Inteligencia'))
+    fireEvent.click(screen.getByLabelText('Suma a Sabiduría'))
+    fireEvent.click(screen.getByText('Aplicar potenciación'))
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(2))
+    const effects = await edwardEffects()
+    expect(effects.map((e) => e.target).sort()).toEqual(['inteligencia', 'sabiduria'])
+    expect(effects.every((e) => e.name === 'Kyushu' && e.flat === 25)).toBe(true)
+  })
+
+  it('buffs: con varios stats, el que ya tiene 4 pide elegir y los demás entran', async () => {
+    await openEdwardPanel()
+    // 4 buffs de tipos distintos sobre Fuerza
+    for (const [i, typeId] of ['pasivo', 'pocion', 'estilo', 'estado'].entries()) {
+      fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: typeId } })
+      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
+      fireEvent.click(screen.getByText('Agregar efecto'))
+      await waitFor(async () => expect(await edwardEffects()).toHaveLength(i + 1))
+    }
+
+    // un quinto buff sobre Fuerza y Destreza a la vez
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'armamento' } })
+    fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Ya hay 4 buffs activos sobre Fuerza')
+
+    // todavía no se guardó nada (se resuelve primero Fuerza)
+    expect(await edwardEffects()).toHaveLength(4)
+    fireEvent.click(screen.getAllByText('Quitar')[0]) // saca uno de Fuerza
+    await waitFor(async () => {
+      const effects = await edwardEffects()
+      expect(effects).toHaveLength(5) // 4 de Fuerza (uno salió y entró el nuevo) + 1 de Destreza
+      expect(effects.filter((e) => e.target === 'destreza')).toHaveLength(1)
+      expect(effects.filter((e) => e.target === 'fuerza' && e.typeId === 'armamento')).toHaveLength(1)
+    })
+  })
+
+  it('buffs: "Omitir este stat" sigue con los demás sin agregar el que estaba lleno', async () => {
+    await openEdwardPanel()
+    for (const [i, typeId] of ['pasivo', 'pocion', 'estilo', 'estado'].entries()) {
+      fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: typeId } })
+      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
+      fireEvent.click(screen.getByText('Agregar efecto'))
+      await waitFor(async () => expect(await edwardEffects()).toHaveLength(i + 1))
+    }
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'armamento' } })
+    fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByText('Omitir este stat'))
+    await waitFor(async () => {
+      const effects = await edwardEffects()
+      expect(effects).toHaveLength(5)
+      expect(effects.filter((e) => e.target === 'fuerza' && e.typeId === 'armamento')).toHaveLength(0)
+      expect(effects.filter((e) => e.target === 'destreza')).toHaveLength(1)
+    })
   })
 })

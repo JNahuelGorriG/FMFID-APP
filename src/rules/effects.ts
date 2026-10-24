@@ -146,6 +146,28 @@ export function addEffect(effects: Effect[], effect: Effect, bases: EffectBases)
   return { status: 'limit', occupants: occupants.filter((e) => e.id !== effect.id) }
 }
 
+export interface BatchResult {
+  /** Efectos después de agregar los que entraron. */
+  effects: Effect[]
+  /** El primero que no entró porque ya hay 4 activos sobre su stat, con los que quedaron por procesar. */
+  blocked: { effect: Effect; occupants: Effect[]; rest: Effect[] } | null
+}
+
+/**
+ * Agrega varios efectos de una vez (el mismo buff o debuff sobre varios stats). Cada uno cumple las
+ * reglas de siempre. Se detiene en el primero que pasaría el límite de 4 y lo devuelve para que el GM
+ * elija cuál sale, junto con los que faltan por agregar.
+ */
+export function addEffects(effects: Effect[], list: Effect[], bases: EffectBases): BatchResult {
+  let current = effects
+  for (let i = 0; i < list.length; i++) {
+    const result = addEffect(current, list[i], bases)
+    if (result.status === 'added') current = result.effects
+    else return { effects: current, blocked: { effect: list[i], occupants: result.occupants, rest: list.slice(i + 1) } }
+  }
+  return { effects: current, blocked: null }
+}
+
 export type LimitChoice = { action: 'remove' | 'suspend'; id: string }
 
 /**

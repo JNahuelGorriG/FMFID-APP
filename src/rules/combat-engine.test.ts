@@ -5,6 +5,7 @@ import {
   absorbPointBarriers,
   absorbWithBarriers,
   addEffect,
+  addEffects,
   addEffectWithChoice,
   addNpcParticipant,
   addPcParticipant,
@@ -154,6 +155,50 @@ describe('buffs y debuffs', () => {
     expect(() =>
       addEffectWithChoice([old], fx({ typeId: 'pocion' }), { action: 'suspend', id: old.id }),
     ).toThrow()
+  })
+})
+
+describe('el mismo efecto sobre varios stats', () => {
+  const sameBuff = (targets: Effect['target'][], typeId = 'pocion'): Effect[] =>
+    targets.map((target) => fx({ target, typeId, flat: 10 }))
+
+  it('agrega uno por stat', () => {
+    const result = addEffects([], sameBuff(['fuerza', 'destreza', 'ataque']), bases)
+    expect(result.blocked).toBeNull()
+    expect(result.effects.map((e) => e.target)).toEqual(['fuerza', 'destreza', 'ataque'])
+  })
+
+  it('cada stat cumple sus propias reglas: el pisado por tipo es por stat', () => {
+    const existing = [fx({ target: 'fuerza', typeId: 'pocion', flat: 50 })]
+    const result = addEffects(existing, sameBuff(['fuerza', 'destreza']), bases)
+    const resolved = resolveEffects(result.effects, bases)
+    // en Fuerza la poción nueva (10) queda pisada por la de 50, en Destreza está activa
+    expect(resolved.find((r) => r.effect.target === 'destreza')?.state).toBe('activo')
+    expect(resolved.filter((r) => r.effect.target === 'fuerza').map((r) => r.state)).toEqual(['activo', 'pisado'])
+  })
+
+  it('se detiene en el stat que ya tiene 4 activos y deja pendientes los demás', () => {
+    let full: Effect[] = []
+    for (const typeId of ['pasivo', 'pocion', 'estilo', 'estado']) {
+      const r = addEffect(full, fx({ target: 'destreza', typeId, flat: 10 }), bases)
+      if (r.status === 'added') full = r.effects
+    }
+    const list = sameBuff(['fuerza', 'destreza', 'carisma'], 'armamento')
+    const result = addEffects(full, list, bases)
+    expect(result.effects.filter((e) => e.target === 'fuerza')).toHaveLength(1) // Fuerza ya entró
+    expect(result.blocked?.effect.target).toBe('destreza')
+    expect(result.blocked?.occupants).toHaveLength(4)
+    expect(result.blocked?.rest.map((e) => e.target)).toEqual(['carisma'])
+
+    // se retoma con lo que quedó pendiente
+    const resumed = addEffects(result.effects, result.blocked?.rest ?? [], bases)
+    expect(resumed.blocked).toBeNull()
+    expect(resumed.effects.some((e) => e.target === 'carisma')).toBe(true)
+  })
+
+  it('una lista vacía no cambia nada', () => {
+    const existing = [fx({})]
+    expect(addEffects(existing, [], bases)).toEqual({ effects: existing, blocked: null })
   })
 })
 

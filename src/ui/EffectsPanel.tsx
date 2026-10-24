@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import {
-  EFFECT_TARGETS,
   SKILL_TYPE_ID,
   TECHNIQUES,
-  addEffect,
   addEffectWithChoice,
+  addEffects,
   endSkill,
   resolveEffects,
   resolveTechniqueTarget,
@@ -20,6 +19,7 @@ import type {
   Techniques,
 } from '../rules'
 import { NumberField, SelectField, TextField } from './fields'
+import { TargetPicker } from './TargetPicker'
 import { DURATION_LABELS, TARGET_LABELS, describeAmount, describeDuration } from './format'
 
 interface Props {
@@ -41,7 +41,6 @@ const DURATION_OPTIONS = (Object.keys(DURATION_LABELS) as DurationUnit[]).map((u
   value: u,
   label: DURATION_LABELS[u],
 }))
-const TARGET_OPTIONS = EFFECT_TARGETS.map((t) => ({ value: t, label: TARGET_LABELS[t] }))
 
 export function EffectsPanel({
   effects,
@@ -56,86 +55,98 @@ export function EffectsPanel({
   const [kind, setKind] = useState<EffectKind>('buff')
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState(types[0]?.id ?? SKILL_TYPE_ID)
-  const [target, setTarget] = useState<EffectTarget>('fuerza')
+  const [targets, setTargets] = useState<EffectTarget[]>(['fuerza'])
   const [flat, setFlat] = useState(0)
   const [percent, setPercent] = useState(0)
   const [unit, setUnit] = useState<DurationUnit>('turnos')
   const [remaining, setRemaining] = useState(3)
   const [error, setError] = useState('')
-  const [pending, setPending] = useState<{ effect: Effect; occupants: Effect[] } | null>(null)
+  const [pending, setPending] = useState<{ base: Effect[]; effect: Effect; occupants: Effect[]; rest: Effect[] } | null>(null)
   const [techKey, setTechKey] = useState<keyof Techniques>('kyushu')
-  const [techTarget, setTechTarget] = useState<EffectTarget | null>(null)
+  const [techTargets, setTechTargets] = useState<EffectTarget[] | null>(null)
   const [techType, setTechType] = useState(SKILL_TYPE_ID)
   const [techUnit, setTechUnit] = useState<DurationUnit>('habilidad')
   const [techRemaining, setTechRemaining] = useState(3)
 
   const resolved = resolveEffects(effects, bases)
-  /** Stat al que suma la potenciación: el elegido, el guardado por defecto, o ninguno (hay que elegir). */
-  const presetTarget: EffectTarget | null =
-    techTarget ?? resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'preguntar', offensiveStat)
+  /** Stats a los que suma la potenciación: los elegidos, o el guardado por defecto, o ninguno (hay que elegir). */
+  const presetTarget = resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'preguntar', offensiveStat)
+  const chosenTechTargets: EffectTarget[] = techTargets ?? (presetTarget ? [presetTarget] : [])
   const typeName = (id: string) => types.find((t) => t.id === id)?.name ?? id
   const hasSkill = effects.some((e) => e.typeId === SKILL_TYPE_ID)
 
   function add() {
+    if (targets.length === 0) return setError('Elige al menos un stat.')
     if (flat === 0 && percent === 0) return setError('Indica un valor fijo o un porcentaje.')
     if ((unit === 'turnos' || unit === 'rondas') && remaining < 1) {
       return setError('La duración debe ser de al menos 1.')
     }
     setError('')
-    submit({
-      id: crypto.randomUUID(),
-      kind,
-      name: name.trim() || typeName(typeId),
-      typeId,
-      target,
-      flat,
-      percent,
-      duration: { unit, remaining: unit === 'turnos' || unit === 'rondas' ? remaining : 0 },
-      combatId,
-      createdAt: new Date().toISOString(),
-    })
+    submit(
+      targets.map((target) => ({
+        id: crypto.randomUUID(),
+        kind,
+        name: name.trim() || typeName(typeId),
+        typeId,
+        target,
+        flat,
+        percent,
+        duration: { unit, remaining: unit === 'turnos' || unit === 'rondas' ? remaining : 0 },
+        combatId,
+        createdAt: new Date().toISOString(),
+      })),
+    )
   }
 
-  /** Agrega el efecto, o pide elegir cuál sacar si ya hay 4 activos sobre ese stat. */
-  function submit(effect: Effect) {
-    const result = addEffect(effects, effect, bases)
-    if (result.status === 'added') {
-      onChange(result.effects)
-      setName('')
-    } else {
-      setPending({ effect, occupants: result.occupants })
+  /**
+   * Agrega los efectos (uno por stat). Si en algún stat ya hay 4 activos, pide elegir cuál sale y,
+   * resuelto eso, sigue con los que faltan.
+   */
+  function submit(list: Effect[], base: Effect[] = effects) {
+    const result = addEffects(base, list, bases)
+    if (result.blocked) {
+      setPending({ base: result.effects, ...result.blocked })
+      return
     }
+    setPending(null)
+    onChange(result.effects)
+    setName('')
   }
 
   function applyTechnique() {
     if (!techniques) return
-    const value = techniques[techKey]
+    if (chosenTechTargets.length === 0) return setError('Elige a qué stat suma la potenciación.')
     const info = TECHNIQUES.find((t) => t.key === techKey)
-    const resolvedTarget = presetTarget
-    if (!resolvedTarget) return setError('Elige a qué stat suma la potenciación.')
     setError('')
-    submit({
-      id: crypto.randomUUID(),
-      kind: 'buff',
-      name: info?.name ?? techKey,
-      typeId: techType,
-      target: resolvedTarget,
-      flat: value,
-      percent: 0,
-      duration: {
-        unit: techUnit,
-        remaining: techUnit === 'turnos' || techUnit === 'rondas' ? techRemaining : 0,
-      },
-      combatId,
-      createdAt: new Date().toISOString(),
-    })
+    submit(
+      chosenTechTargets.map((target) => ({
+        id: crypto.randomUUID(),
+        kind: 'buff' as const,
+        name: info?.name ?? techKey,
+        typeId: techType,
+        target,
+        flat: techniques[techKey],
+        percent: 0,
+        duration: {
+          unit: techUnit,
+          remaining: techUnit === 'turnos' || techUnit === 'rondas' ? techRemaining : 0,
+        },
+        combatId,
+        createdAt: new Date().toISOString(),
+      })),
+    )
   }
 
   function choose(action: 'remove' | 'suspend', id: string) {
     if (!pending) return
-    onChange(addEffectWithChoice(effects, pending.effect, { action, id }))
-    setPending(null)
-    setName('')
+    const base = addEffectWithChoice(pending.base, pending.effect, { action, id })
+    submit(pending.rest, base)
+  }
+
+  /** Salta el stat que no entró y sigue con los que faltan. */
+  function skipBlocked() {
+    if (!pending) return
+    submit(pending.rest, pending.base)
   }
 
   return (
@@ -186,14 +197,8 @@ export function EffectsPanel({
               options={TECHNIQUES.map((t) => ({ value: t.key, label: `${t.name} (+${techniques[t.key]})` }))}
               onChange={(k) => {
                 setTechKey(k)
-                setTechTarget(null)
+                setTechTargets(null)
               }}
-            />
-            <SelectField
-              label="Suma a"
-              value={presetTarget ?? ''}
-              options={[{ value: '', label: 'Elegir stat…' }, ...TARGET_OPTIONS]}
-              onChange={(v) => setTechTarget(v === '' ? null : (v as EffectTarget))}
             />
             <SelectField
               label="Tipo de la potenciación"
@@ -209,6 +214,12 @@ export function EffectsPanel({
               <NumberField label="Cantidad de la potenciación" integer value={techRemaining} onChange={setTechRemaining} />
             )}
           </div>
+          <TargetPicker
+            label="Suma a (puedes elegir varios)"
+            prefix="Suma a"
+            selected={chosenTechTargets}
+            onChange={setTechTargets}
+          />
           <button className="btn" onClick={applyTechnique}>
             Aplicar potenciación
           </button>
@@ -235,7 +246,6 @@ export function EffectsPanel({
             if (v === SKILL_TYPE_ID) setUnit('habilidad')
           }}
         />
-        <SelectField label="Afecta a" value={target} options={TARGET_OPTIONS} onChange={(v) => setTarget(v)} />
         <TextField label="Nombre" value={name} onChange={setName} placeholder={typeName(typeId)} />
         <NumberField label="Valor fijo" value={flat} onChange={setFlat} />
         <NumberField label="Porcentaje del valor natural" value={percent} onChange={setPercent} />
@@ -244,6 +254,7 @@ export function EffectsPanel({
           <NumberField label="Cantidad" integer value={remaining} onChange={setRemaining} />
         )}
       </div>
+      <TargetPicker label="Afecta a (puedes elegir varios)" prefix="Afecta a" selected={targets} onChange={setTargets} />
       {error && (
         <p className="errors" role="alert">
           {error}
@@ -274,8 +285,11 @@ export function EffectsPanel({
               )}
             </div>
           ))}
-          <button className="btn secondary compact" onClick={() => setPending(null)}>
-            Cancelar
+          {pending.rest.length > 0 && (
+            <p className="muted small">Faltan {pending.rest.length} stat(s) más por agregar después de este.</p>
+          )}
+          <button className="btn secondary compact" onClick={skipBlocked}>
+            Omitir este stat
           </button>
         </div>
       )}

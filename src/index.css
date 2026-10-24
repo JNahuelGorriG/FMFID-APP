@@ -245,3 +245,6 @@ details[open] > summary { margin-bottom: 8px; }
 
 .check.pick { align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 6px; color: var(--text); }
 .check.pick.active { border-color: var(--accent); }
+
+.targets { margin-bottom: 8px; }
+.target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 10px; }
