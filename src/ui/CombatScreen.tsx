@@ -21,9 +21,9 @@ type Section = 'turnos' | 'ataque' | 'comparar' | 'checks' | 'agregar'
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'turnos', label: 'Turnos' },
   { id: 'ataque', label: 'Ataque' },
-  { id: 'agregar', label: 'Agregar' },
   { id: 'comparar', label: 'Comparar' },
   { id: 'checks', label: 'Checks' },
+  { id: 'agregar', label: 'Agregar' },
 ]
 
 export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props) {
