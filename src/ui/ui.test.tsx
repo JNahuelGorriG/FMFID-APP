@@ -1475,4 +1475,69 @@ describe('app', () => {
     })
     expect((await screen.findByLabelText('Efectos de Edward')).textContent).toContain('Aumento del límite')
   })
+
+  /** Ataca a Edward con el Goblin sin tirada de impacto y d8 3 (1 medio), y devuelve el texto del registro. */
+  async function goblinHitsEdward(prepare?: (health: { leve: number; medio: number; letal: number }) => object) {
+    await setUpDuel()
+    const [before] = await combatRepo.list()
+    const edwardId = before.participants.find((p) => p.name === 'Edward')!.id
+    if (prepare) {
+      await combatRepo.update(before.id, (c) =>
+        updateParticipant(c, edwardId, (p) => ({ ...p, pc: p.pc ? { ...p.pc, ...(prepare(p.pc.health) as object) } : null })),
+      )
+    }
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Atacante'), { target: { value: before.participants.find((p) => p.name === 'Goblin')!.id } })
+    fireEvent.click(await screen.findByLabelText('Aplicar el daño sin depender de la tirada de impacto'))
+    fireEvent.change(await screen.findByLabelText('d8 de resistencia'), { target: { value: '3' } })
+    fireEvent.click(await screen.findByText('Confirmar y aplicar'))
+    await waitFor(async () => expect((await combatRepo.list())[0].alerts.length).toBeGreaterThan(0))
+    return (await combatRepo.list())[0]
+  }
+
+  it('daño a un jugador: el registro cuenta cómo cambió su vida', async () => {
+    const c = await goblinHitsEdward()
+    expect(c.alerts[0].text).toContain('1 medio')
+    expect(c.alerts[0].text).toContain('vida: medios 7 → 6')
+    expect((await screen.findByLabelText('Resultado del último ataque')).textContent).toContain('medios 7 → 6')
+  })
+
+  it('daño a un jugador sin vida: avisa que no había nada que descontar, no queda callado', async () => {
+    const c = await goblinHitsEdward(() => ({ health: { leve: 0, medio: 0, letal: 0 } }))
+    const text = c.alerts[0].text
+    expect(text).toContain('vida sin cambios')
+    expect(text).toContain('sin vida para descontar: 1 medio')
+    expect(text).toContain('Edward queda en estado crítico')
+    expect(c.participants.find((p) => p.name === 'Edward')?.pc?.health).toEqual({ leve: 0, medio: 0, letal: 0 })
+  })
+
+  it('daño a un jugador con pocas leves: una herida media se lleva lo que le queda', async () => {
+    const c = await goblinHitsEdward(() => ({ health: { leve: 2, medio: 0, letal: 0 } }))
+    expect(c.participants.find((p) => p.name === 'Edward')?.pc?.health).toEqual({ leve: 0, medio: 0, letal: 0 })
+    expect(c.alerts[0].text).toContain('leves 2 → 0')
+    expect(c.alerts[0].text).toContain('sin vida para descontar: 1 medio')
+  })
+
+  it('daño a un jugador con barrera: se cuenta que la barrera lo absorbió y la vida queda igual', async () => {
+    const c = await goblinHitsEdward(() => ({
+      barriers: [{ id: 'b1', wounds: { leve: 0, medio: 1, letal: 0 }, duration: { unit: 'manual', remaining: 0 }, combatId: null, createdAt: '' }],
+    }))
+    expect(c.alerts[0].text).toContain('la barrera absorbió todo el daño')
+    expect(c.alerts[0].text).toContain('vida sin cambios')
+    expect(c.participants.find((p) => p.name === 'Edward')?.pc?.barriers).toEqual([])
+  })
+
+  it('panel del jugador: sin vida se avisa', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    const [c] = await combatRepo.list()
+    await combatRepo.update(c.id, (x) =>
+      updateParticipant(x, x.participants[0].id, (p) => ({ ...p, pc: p.pc ? { ...p.pc, health: { leve: 0, medio: 0, letal: 0 } } : null })),
+    )
+    goTo('Turnos')
+    await openFirstParticipant()
+    expect(await screen.findByText('Sin vida: no queda nada por descontar.')).toBeTruthy()
+  })
 })

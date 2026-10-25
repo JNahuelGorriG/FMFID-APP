@@ -1,5 +1,6 @@
 import { absorbPointBarriers, absorbWithBarriers } from './barriers'
 import { applyWounds } from './health'
+import type { Health } from './health'
 import { differenceLevel, resolveHit } from './hit'
 import type { AutomaticOutcome, DifferenceLevel, RollOutcome } from './hit'
 import { armorActive, defenseAgainst } from './profile'
@@ -90,15 +91,44 @@ export function woundsForPc(applied: WoundCategory, resistance: number): Wounds 
  * y la armadura gasta sus usos.
  */
 export function applyToPc(pc: PcState, wounds: Wounds, armorSpent: number): PcState {
+  return applyToPcDetailed(pc, wounds, armorSpent).pc
+}
+
+/** Lo que pasó al aplicar un ataque a un jugador, para poder contárselo al GM. */
+export interface PcHit {
+  pc: PcState
+  /** Heridas que llegaron a la vida después de las barreras. */
+  afterBarriers: Wounds
+  /** Hubo barreras y absorbieron algo. */
+  barrierAbsorbed: boolean
+  /** Heridas que no se pudieron descontar porque ya no quedaba vida. */
+  unpaid: Wounds
+  before: Health
+  after: Health
+  /** Se quedó sin heridas letales: estado crítico. */
+  critical: boolean
+}
+
+/** Como `applyToPc`, pero devolviendo también qué absorbió la barrera, qué no se pudo pagar y la vida antes y después. */
+export function applyToPcDetailed(pc: PcState, wounds: Wounds, armorSpent: number): PcHit {
   const absorbed = absorbWithBarriers(pc.barriers, wounds)
-  const result = applyWounds(pc.health, absorbed.remaining)
+  const result = applyWounds(pc.health, absorbed.remaining, { drain: true })
+  const total = (w: Wounds) => w.leve + w.medio + w.letal
   return {
-    ...pc,
-    barriers: absorbed.barriers,
-    health: result.health,
-    armor: pc.armor
-      ? { ...pc.armor, usesLeft: Math.max(0, pc.armor.usesLeft - armorSpent) }
-      : pc.armor,
+    pc: {
+      ...pc,
+      barriers: absorbed.barriers,
+      health: result.health,
+      armor: pc.armor
+        ? { ...pc.armor, usesLeft: Math.max(0, pc.armor.usesLeft - armorSpent) }
+        : pc.armor,
+    },
+    afterBarriers: absorbed.remaining,
+    barrierAbsorbed: pc.barriers.length > 0 && JSON.stringify(absorbed.remaining) !== JSON.stringify(wounds) && total(wounds) > 0,
+    unpaid: result.unpaid,
+    before: pc.health,
+    after: result.health,
+    critical: result.critical,
   }
 }
 

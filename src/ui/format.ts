@@ -211,3 +211,28 @@ export const EFFECT_STATE_LABELS: Record<EffectState, string> = {
   'sin-lugar': 'Sin lugar',
   suspendido: 'Suspendido',
 }
+
+import type { PcHit } from '../rules'
+
+const POOL_NAMES = { leve: 'leves', medio: 'medios', letal: 'letales' } as const
+
+/** Cuenta qué pasó al aplicar un golpe a un jugador: barrera, vida antes y después, y lo que no se pudo descontar. */
+export function describeHit(name: string, hit: PcHit): string {
+  const parts: string[] = []
+  const rest = hit.afterBarriers
+  if (hit.barrierAbsorbed) {
+    parts.push(
+      rest.leve + rest.medio + rest.letal === 0
+        ? 'la barrera absorbió todo el daño'
+        : `la barrera absorbió parte (a la vida llegó ${woundsText(rest)})`,
+    )
+  }
+  const changes = (['leve', 'medio', 'letal'] as const)
+    .filter((k) => hit.before[k] !== hit.after[k])
+    .map((k) => `${POOL_NAMES[k]} ${hit.before[k]} → ${hit.after[k]}`)
+  parts.push(changes.length > 0 ? `vida: ${changes.join(', ')}` : 'vida sin cambios')
+  const u = hit.unpaid
+  if (u.leve + u.medio + u.letal > 0) parts.push(`sin vida para descontar: ${woundsText(u)}`)
+  if (hit.critical) parts.push(`${name} queda en estado crítico`)
+  return parts.join(' · ')
+}

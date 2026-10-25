@@ -14,6 +14,8 @@ import {
   invertLevel,
   invertOutcome,
   outcomeRanges,
+  applyToPcDetailed,
+  applyWounds,
   clampSaturation,
   saturationFor,
   weaponFromTable,
@@ -463,5 +465,74 @@ describe('arma equipada', () => {
     expect(boosted.damage).toBeCloseTo(plain.damage + 34 + 66, 6)
     // un daño puesto a mano reemplaza al calculado, extras incluidos
     expect(damageStage(attacker, defender, 'fisico', { damage: 1000, extra: 50 }).damage).toBe(1000)
+  })
+})
+
+describe('daño que no se puede pagar entero', () => {
+  const none = { leve: 0, medio: 0, letal: 0 }
+  const value = (h: { leve: number; medio: number; letal: number }) => h.leve + 3 * h.medio + 9 * h.letal
+
+  it('un jugador con poca vida pierde todo lo que le queda: una herida que no puede pagar no lo deja intacto', () => {
+    // 2 leves no alcanzan para un medio (3): antes no se descontaba nada
+    const r = applyWounds({ leve: 2, medio: 0, letal: 0 }, { leve: 0, medio: 1, letal: 0 }, { drain: true })
+    expect(r.health).toEqual({ leve: 0, medio: 0, letal: 0 })
+    expect(r.unpaid).toEqual({ letal: 0, medio: 1, leve: 0 })
+    expect(r.critical).toBe(true)
+  })
+
+  it('sin vida no hay nada que descontar, y se avisa lo que quedó sin pagar', () => {
+    const r = applyWounds({ leve: 0, medio: 0, letal: 0 }, { leve: 2, medio: 1, letal: 0 }, { drain: true })
+    expect(r.health).toEqual({ leve: 0, medio: 0, letal: 0 })
+    expect(r.unpaid).toEqual({ letal: 0, medio: 1, leve: 2 })
+  })
+
+  it('una barrera no se vacía con una herida que no puede absorber entera: la herida pasa de largo', () => {
+    const r = applyWounds({ leve: 2, medio: 0, letal: 0 }, { leve: 0, medio: 1, letal: 0 }) // sin drain
+    expect(r.health).toEqual({ leve: 2, medio: 0, letal: 0 })
+    expect(r.unpaid.medio).toBe(1)
+  })
+
+  it('para cualquier vida y cualquier golpe: no hay vida negativa, y si algo queda sin pagar es que ya no queda vida', () => {
+    const hits = [
+      { leve: 2, medio: 1, letal: 0 }, { leve: 0, medio: 1, letal: 0 }, { leve: 3, medio: 0, letal: 0 },
+      { leve: 1, medio: 1, letal: 1 }, { leve: 0, medio: 0, letal: 2 }, { leve: 4, medio: 3, letal: 1 },
+    ]
+    for (const w of hits) {
+      for (let leve = 0; leve <= 8; leve++) {
+        for (let medio = 0; medio <= 5; medio++) {
+          for (let letal = 0; letal <= 2; letal++) {
+            const h = { leve, medio, letal }
+            const r = applyWounds(h, w, { drain: true })
+            expect(Math.min(r.health.leve, r.health.medio, r.health.letal)).toBeGreaterThanOrEqual(0)
+            const unpaid = r.unpaid.leve + r.unpaid.medio + r.unpaid.letal > 0
+            if (unpaid) expect(value(r.health)).toBe(0) // se gastó todo
+            else expect(value(r.health)).toBe(value(h) - value(w)) // se pagó exacto
+          }
+        }
+      }
+    }
+  })
+
+  it('el resultado detallado cuenta qué absorbió la barrera, qué se descontó y qué no se pudo pagar', () => {
+    const { combat, pc } = arena()
+    const base = combat.participants.find((p) => p.id === pc)!.pc!
+    const barrier = { id: 'b1', wounds: { leve: 0, medio: 1, letal: 0 }, duration: { unit: 'manual' as const, remaining: 0 }, combatId: null, createdAt: '' }
+
+    // la barrera absorbe todo
+    const absorbed = applyToPcDetailed({ ...base, barriers: [barrier] }, { leve: 0, medio: 1, letal: 0 }, 0)
+    expect(absorbed.barrierAbsorbed).toBe(true)
+    expect(absorbed.afterBarriers).toEqual(none)
+    expect(absorbed.after).toEqual(absorbed.before)
+    expect(absorbed.pc.barriers).toEqual([])
+
+    // sin barrera, nada absorbe y la vida baja
+    const plain = applyToPcDetailed(base, { leve: 0, medio: 1, letal: 0 }, 0)
+    expect(plain.barrierAbsorbed).toBe(false)
+    expect(plain.after.medio).toBe(plain.before.medio - 1)
+
+    // sin vida: todo queda sin pagar y es estado crítico
+    const dead = applyToPcDetailed({ ...base, health: { leve: 0, medio: 0, letal: 0 } }, { leve: 2, medio: 1, letal: 0 }, 0)
+    expect(dead.unpaid).toEqual({ letal: 0, medio: 1, leve: 2 })
+    expect(dead.critical).toBe(true)
   })
 })

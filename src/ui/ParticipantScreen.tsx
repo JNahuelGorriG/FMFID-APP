@@ -333,7 +333,11 @@ function PcPanel({
             />
           ))}
         </div>
-        {state.health.letal === 0 && <p className="errors">Sin heridas letales: estado crítico.</p>}
+        {state.health.leve + state.health.medio + state.health.letal === 0 ? (
+          <p className="errors">Sin vida: no queda nada por descontar.</p>
+        ) : (
+          state.health.letal === 0 && <p className="errors">Sin heridas letales: estado crítico.</p>
+        )}
       </div>
 
       <div className="card">

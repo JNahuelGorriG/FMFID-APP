@@ -27,17 +27,23 @@ function breakDown(health: Health, value: number, pools: readonly Pool[]): void 
 }
 
 /** Paga `qty` heridas de un tipo. Devuelve cuántas quedaron sin poder pagarse. */
-function pay(health: Health, type: Pool, qty: number): number {
+function pay(health: Health, type: Pool, qty: number, drain: boolean): number {
   const typeIndex = ORDER.indexOf(type)
   const lower = ORDER.slice(typeIndex + 1)
   const higher = ORDER.slice(0, typeIndex).reverse() // la más cercana primero
 
   let remaining = qty
-  const own = Math.min(health[type], remaining)
-  health[type] -= own
-  remaining -= own
 
   while (remaining > 0) {
+    // 0) La propia reserva, también la que acaba de recibir vuelto al romper una mayor (por ejemplo,
+    //    las leves que sobran de un medio roto sirven para pagar la siguiente leve).
+    if (health[type] > 0) {
+      const take = Math.min(health[type], remaining)
+      health[type] -= take
+      remaining -= take
+      continue
+    }
+
     const cost = VALUE[type]
 
     // 1) Pagar con reservas menores (por ejemplo, 3 leves por un medio que falta).
@@ -55,7 +61,12 @@ function pay(health: Health, type: Pool, qty: number): number {
 
     // 2) Romper una reserva mayor y quedarse con el vuelto.
     const source = higher.find((p) => health[p] > 0)
-    if (source === undefined) return remaining
+    if (source === undefined) {
+      // No alcanza para pagar esta herida. Con `drain` se gasta todo lo que quede: una herida que no se
+      // puede pagar entera no deja la vida intacta.
+      if (drain) for (const p of lower) health[p] = 0
+      return remaining
+    }
     health[source] -= 1
     breakDown(health, VALUE[source] - cost, ORDER.slice(ORDER.indexOf(source) + 1))
     remaining -= 1
@@ -75,13 +86,16 @@ export interface WoundResult {
  * Descuenta heridas de la vida actual con las reglas de conversión:
  * primero la propia reserva, luego reservas menores y, si no alcanza, rompe una mayor
  * y devuelve el cambio. No convierte vida a voluntad: solo lo hace al recibir daño.
+ * Con `drain` (la vida de un jugador), una herida que no se puede pagar entera gasta todo lo que
+ * quede; sin él (una barrera), la herida pasa de largo y la barrera no se toca.
  */
-export function applyWounds(current: Health, wounds: Wounds): WoundResult {
+export function applyWounds(current: Health, wounds: Wounds, options: { drain?: boolean } = {}): WoundResult {
+  const drain = options.drain ?? false
   const health: Health = { ...current }
   const unpaid: Wounds = {
-    letal: pay(health, 'letal', wounds.letal),
-    medio: pay(health, 'medio', wounds.medio),
-    leve: pay(health, 'leve', wounds.leve),
+    letal: pay(health, 'letal', wounds.letal, drain),
+    medio: pay(health, 'medio', wounds.medio, drain),
+    leve: pay(health, 'leve', wounds.leve, drain),
   }
   return { health, unpaid, critical: health.letal <= 0 }
 }

@@ -20,11 +20,21 @@ import {
   updateParticipant,
   woundsForPc,
 } from '../../rules'
-import { TECHNIQUES } from '../../rules'
+import { TECHNIQUES, applyToPcDetailed } from '../../rules'
 import type { AttackType, Combat, Profile, StatName, Techniques, WoundCategory } from '../../rules'
 import { combatRepo } from '../data'
 import { NumberField, OptionalNumberField, SelectField } from '../fields'
-import { GROUP_LABELS, LEVEL_LABELS, OUTCOME_LABELS, STAT_LABELS, fmt, rangeText, withRank, woundsText } from '../format'
+import {
+  GROUP_LABELS,
+  LEVEL_LABELS,
+  OUTCOME_LABELS,
+  STAT_LABELS,
+  describeHit,
+  fmt,
+  rangeText,
+  withRank,
+  woundsText,
+} from '../format'
 
 const STAT_OPTIONS = STAT_NAMES.map((s) => ({ value: s, label: STAT_LABELS[s] }))
 const TYPE_OPTIONS: { value: AttackType; label: string }[] = [
@@ -61,6 +71,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const [defense, setDefense] = useState<number | undefined>(undefined)
   const [defenseChoice, setDefenseChoice] = useState<AttackType | null>(null)
   const [boosts, setBoosts] = useState<(keyof Techniques)[]>([])
+  const [lastResult, setLastResult] = useState('')
   const [d8, setD8] = useState<number | undefined>(undefined)
   const [d6, setD6] = useState<number | undefined>(undefined)
   const [points, setPoints] = useState<number | undefined>(undefined)
@@ -165,9 +176,21 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     if (isPc && (resistance === null || wounds === null)) return setMessage(resistanceError)
     setMessage('')
     const result = outcome ? OUTCOME_LABELS[outcome] : 'Impacto'
+    // Lo que va a pasar con la vida del defensor, para contárselo al GM (no solo "recibió tanto daño").
+    const current = combat.participants.find((p) => p.id === defender.participantId)
+    let consequence = ''
+    if (current?.pc && wounds) consequence = describeHit(defender.name, applyToPcDetailed(current.pc, wounds, stage.armorSpent))
+    else if (current?.npc) {
+      const after = applyToNpc(current.npc, npcPoints)
+      consequence = `vida ${current.npc.hpCurrent} → ${after.hpCurrent}${after.hpCurrent === 0 ? ' (sin vida)' : ''}${
+        current.npc.barriers.length > after.barriers.length || current.npc.barriers.some((b, i) => after.barriers[i]?.points !== b.points)
+          ? ' · la barrera absorbió parte'
+          : ''
+      }`
+    }
     const text = isPc
-      ? `${attacker.name} → ${defender.name}: ${result} · ${woundsText(wounds ?? { leve: 0, medio: 0, letal: 0 })}`
-      : `${attacker.name} → ${defender.name}: ${result} · −${npcPoints} de vida`
+      ? `${attacker.name} → ${defender.name}: ${result} · ${woundsText(wounds ?? { leve: 0, medio: 0, letal: 0 })} (${consequence})`
+      : `${attacker.name} → ${defender.name}: ${result} · −${npcPoints} de vida (${consequence})`
     await combatRepo.update(combat.id, (c) => {
       const target = c.participants.find((p) => p.id === defender.participantId)
       if (!target) return c
@@ -180,6 +203,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
       return addAlert(next, text)
     })
     reset()
+    setLastResult(text)
   }
 
   return (
@@ -464,6 +488,12 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           </p>
         )}
       </div>
+
+      {lastResult && (
+        <p className="result" role="status" aria-label="Resultado del último ataque">
+          {lastResult}
+        </p>
+      )}
 
       {lastAction && (
         <div className="card">
