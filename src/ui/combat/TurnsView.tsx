@@ -64,7 +64,18 @@ export function TurnsView({ combat, onOpenParticipant, onDeleted }: Props) {
           onChange={(status) => void run((c) => ({ ...c, status }))}
         />
       </div>
-
+      <h2>Orden de turnos</h2>
+      {order.length === 0 && <p className="muted small">Agrega participantes desde la sección Agregar.</p>}
+      {order.map((p) => (
+        <ParticipantCard
+          key={p.id}
+          participant={p}
+          active={p.id === combat.activeId}
+          onOpen={() => onOpenParticipant(p.id)}
+          onInitiative={(value) => void run((c) => setInitiative(c, p.id, value ?? null))}
+          onSide={(side) => void run((c) => setSide(c, p.id, side))}
+        />
+      ))}
       {combat.alerts.length > 0 && (
         <div className="card alerts" aria-label="Avisos">
           {combat.alerts.map((a) => (
@@ -82,18 +93,7 @@ export function TurnsView({ combat, onOpenParticipant, onDeleted }: Props) {
         </div>
       )}
 
-      <h2>Orden de turnos</h2>
-      {order.length === 0 && <p className="muted small">Agrega participantes desde la sección Agregar.</p>}
-      {order.map((p) => (
-        <ParticipantCard
-          key={p.id}
-          participant={p}
-          active={p.id === combat.activeId}
-          onOpen={() => onOpenParticipant(p.id)}
-          onInitiative={(value) => void run((c) => setInitiative(c, p.id, value ?? null))}
-          onSide={(side) => void run((c) => setSide(c, p.id, side))}
-        />
-      ))}
+    
 
       <button className="btn danger" onClick={remove}>
         Eliminar combate
