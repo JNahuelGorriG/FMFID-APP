@@ -9,6 +9,7 @@ import { characterSheet } from './character'
 import { armorBonus, armorUsesFor, weaponBonus } from './equipment'
 import type { ArmorType, WeaponSize } from './equipment'
 import { RANKS } from './ranks'
+import type { StatName } from './types'
 
 export interface EnergyPools {
   natural: number
@@ -39,6 +40,17 @@ export function armorFromTable(type: ArmorType, rank: string): ArmorState {
   const uses = armorUsesFor(found.name, type)?.total ?? 0
   return { type, rank: found.name, bonus: armorBonus(found, type), bonusTarget: 'fisica', usesMax: uses, usesLeft: uses }
 }
+
+/**
+ * Ajustes del límite de los buffs de un combatiente: cuántos puntos se le suman al límite (por
+ * habilidades que lo levantan) y en qué stats opera por encima del límite.
+ */
+export interface StatCaps {
+  raise: number
+  open: StatName[]
+}
+
+export const defaultStatCaps = (): StatCaps => ({ raise: 0, open: [] })
 
 export type WeaponTarget = 'fisico' | 'magico' | 'ambos'
 
@@ -73,6 +85,8 @@ export interface PcState {
   armor: ArmorState | null
   /** Arma equipada. Sin ella, el daño usa el arma de referencia del personaje. */
   weapon: WeaponState | null
+  /** Límite de los buffs. */
+  statCaps: StatCaps
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
 }
@@ -89,6 +103,7 @@ export function initialPcState(character: Character): PcState {
     effects: [],
     armor: null,
     weapon: null,
+    statCaps: defaultStatCaps(),
     saturation: 0,
   }
 }
@@ -102,6 +117,8 @@ export interface NpcParticipantState {
   effects: Effect[]
   /** Arma equipada. Sin ella, el daño usa el arma de referencia de su perfil. */
   weapon: WeaponState | null
+  /** Límite de los buffs. */
+  statCaps: StatCaps
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
 }
@@ -114,6 +131,7 @@ export function initialNpcState(profile: EnemyProfile): NpcParticipantState {
     barriers: [],
     effects: [],
     weapon: null,
+    statCaps: defaultStatCaps(),
     saturation: 0,
   }
 }

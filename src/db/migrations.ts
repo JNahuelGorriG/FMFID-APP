@@ -1,4 +1,4 @@
-import { initialPcState } from '../rules'
+import { defaultStatCaps, initialPcState } from '../rules'
 import type { Character, Combat, Npc, Participant, PcState } from '../rules'
 
 /** Estado vivo por personaje de las versiones anteriores (ya no existe). */
@@ -35,7 +35,7 @@ export function migrateCombat(
     const legacy = states.find((s) => s.characterId === p.characterId)
     if (legacy) {
       const { characterId: _id, ...rest } = legacy
-      return { ...p, side, pc: { ...rest, armor: null, weapon: null, saturation: 0 } }
+      return { ...p, side, pc: { ...rest, armor: null, weapon: null, statCaps: defaultStatCaps(), saturation: 0 } }
     }
     const character = characters.find((c) => c.id === p.characterId)
     return { ...p, side, pc: character ? initialPcState(character) : null }
@@ -58,11 +58,12 @@ export function normalizeCombat(combat: Combat): Combat {
               ...p.pc,
               saturation: p.pc.saturation ?? 0,
               weapon: p.pc.weapon ?? null,
+              statCaps: p.pc.statCaps ?? defaultStatCaps(),
               armor: p.pc.armor ? { ...p.pc.armor, bonusTarget: p.pc.armor.bonusTarget ?? 'fisica' } : null,
             },
           }
         : p.npc
-          ? { ...p, npc: { ...p.npc, saturation: p.npc.saturation ?? 0, weapon: p.npc.weapon ?? null } }
+          ? { ...p, npc: { ...p.npc, saturation: p.npc.saturation ?? 0, weapon: p.npc.weapon ?? null, statCaps: p.npc.statCaps ?? defaultStatCaps() } }
           : p,
     ),
   }

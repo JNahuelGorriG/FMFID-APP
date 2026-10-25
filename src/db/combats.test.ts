@@ -101,9 +101,19 @@ describe('tipos de buff', () => {
     expect((await settings.getEffectTypes()).at(-1)?.id).toBe('bendicion')
   })
 
-  it('no deja quitar "habilidad" ni nombres vacíos', async () => {
+  it('los tipos guardados antes de Espíritu lo reciben, sin perder los editados', async () => {
+    const settings = createSettingsRepository(db)
+    // simula una lista guardada por una versión anterior
+    await db.settings.put({ key: 'effectTypes', value: [{ id: 'habilidad', name: 'Mi habilidad' }, { id: 'pocion', name: 'Mi poción' }] })
+    const types = await settings.getEffectTypes()
+    expect(types.map((t) => t.id)).toEqual(['habilidad', 'pocion', 'espiritu'])
+    expect(types[0].name).toBe('Mi habilidad')
+  })
+
+  it('no deja quitar "habilidad" ni "Espíritu" ni nombres vacíos', async () => {
     const settings = createSettingsRepository(db)
     await expect(settings.saveEffectTypes(DEFAULT_EFFECT_TYPES.filter((t) => t.id !== 'habilidad'))).rejects.toThrow()
+    await expect(settings.saveEffectTypes(DEFAULT_EFFECT_TYPES.filter((t) => t.id !== 'espiritu'))).rejects.toThrow()
     await expect(settings.saveEffectTypes([...DEFAULT_EFFECT_TYPES, { id: 'x', name: ' ' }])).rejects.toThrow()
   })
 })

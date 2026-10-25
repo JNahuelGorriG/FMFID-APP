@@ -281,7 +281,7 @@ describe('app', () => {
     })
   })
 
-  it('participante: al pasar el límite de 4 buffs pide elegir cuál sale', async () => {
+  it('participante: al pasar los 4 buffs de un stat, el más débil queda sin lugar y vuelve si se libera uno', async () => {
     await repo.create(edwardData)
     await openNewCombat()
     goTo('Agregar')
@@ -289,19 +289,23 @@ describe('app', () => {
     goTo('Turnos')
     await openFirstParticipant()
 
-    const types = ['pasivo', 'pocion', 'estilo', 'estado']
-    for (const [i, typeId] of types.entries()) {
+    // 4 buffs de tipos distintos sobre Fuerza, de 10 a 40, y un quinto de 50
+    const adds: [string, string][] = [['pasivo', '10'], ['pocion', '20'], ['estilo', '30'], ['estado', '40'], ['armamento', '50']]
+    for (const [i, [typeId, value]] of adds.entries()) {
       fireEvent.change(await screen.findByLabelText('Tipo'), { target: { value: typeId } })
-      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
+      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value } })
       fireEvent.click(screen.getByText('Agregar efecto'))
-      await waitFor(() => expect(screen.getAllByText('Activo')).toHaveLength(i + 1))
+      await waitFor(async () => expect(await edwardEffects()).toHaveLength(i + 1))
     }
-    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'armamento' } })
-    fireEvent.click(screen.getByText('Agregar efecto'))
-    expect((await screen.findByRole('alert')).textContent).toContain('Ya hay 4 buffs activos')
 
-    fireEvent.click(screen.getAllByText('Quitar')[0])
-    await waitFor(() => expect(screen.queryByText(/Ya hay 4 buffs/)).toBeNull())
+    // el más débil (10) queda listado pero sin lugar, y no se pregunta nada
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect((await screen.findByText('Sin lugar')).closest('li')?.textContent).toContain('Aumento pasivo')
+    expect(screen.getAllByText('Activo')).toHaveLength(4)
+
+    // al quitar el más fuerte, el que estaba sin lugar vuelve solo
+    fireEvent.click(screen.getByLabelText('Quitar Aumento por armamento'))
+    await waitFor(() => expect(screen.queryByText('Sin lugar')).toBeNull())
     expect(screen.getAllByText('Activo')).toHaveLength(4)
   })
 
@@ -1041,52 +1045,28 @@ describe('app', () => {
     expect(effects.every((e) => e.name === 'Kyushu' && e.flat === 25)).toBe(true)
   })
 
-  it('buffs: con varios stats, el que ya tiene 4 pide elegir y los demás entran', async () => {
+  it('buffs: con varios stats entra en todos, y en el que estaba lleno queda sin lugar el más débil', async () => {
     await openEdwardPanel()
-    // 4 buffs de tipos distintos sobre Fuerza
-    for (const [i, typeId] of ['pasivo', 'pocion', 'estilo', 'estado'].entries()) {
+    // 4 buffs sobre Fuerza: de 10 a 40
+    for (const [i, [typeId, value]] of [['pasivo', '10'], ['pocion', '20'], ['estilo', '30'], ['estado', '40']].entries()) {
       fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: typeId } })
-      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
+      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value } })
       fireEvent.click(screen.getByText('Agregar efecto'))
       await waitFor(async () => expect(await edwardEffects()).toHaveLength(i + 1))
     }
 
-    // un quinto buff sobre Fuerza y Destreza a la vez
+    // un quinto buff de 25 sobre Fuerza y Destreza a la vez: no pregunta nada
     fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'armamento' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '25' } })
     fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
     fireEvent.click(screen.getByText('Agregar efecto'))
-    expect((await screen.findByRole('alert')).textContent).toContain('Ya hay 4 buffs activos sobre Fuerza')
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(6))
+    expect(screen.queryByRole('alert')).toBeNull()
 
-    // todavía no se guardó nada (se resuelve primero Fuerza)
-    expect(await edwardEffects()).toHaveLength(4)
-    fireEvent.click(screen.getAllByText('Quitar')[0]) // saca uno de Fuerza
-    await waitFor(async () => {
-      const effects = await edwardEffects()
-      expect(effects).toHaveLength(5) // 4 de Fuerza (uno salió y entró el nuevo) + 1 de Destreza
-      expect(effects.filter((e) => e.target === 'destreza')).toHaveLength(1)
-      expect(effects.filter((e) => e.target === 'fuerza' && e.typeId === 'armamento')).toHaveLength(1)
-    })
-  })
-
-  it('buffs: "Omitir este stat" sigue con los demás sin agregar el que estaba lleno', async () => {
-    await openEdwardPanel()
-    for (const [i, typeId] of ['pasivo', 'pocion', 'estilo', 'estado'].entries()) {
-      fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: typeId } })
-      fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '10' } })
-      fireEvent.click(screen.getByText('Agregar efecto'))
-      await waitFor(async () => expect(await edwardEffects()).toHaveLength(i + 1))
-    }
-    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'armamento' } })
-    fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
-    fireEvent.click(screen.getByText('Agregar efecto'))
-    await screen.findByRole('alert')
-    fireEvent.click(screen.getByText('Omitir este stat'))
-    await waitFor(async () => {
-      const effects = await edwardEffects()
-      expect(effects).toHaveLength(5)
-      expect(effects.filter((e) => e.target === 'fuerza' && e.typeId === 'armamento')).toHaveLength(0)
-      expect(effects.filter((e) => e.target === 'destreza')).toHaveLength(1)
-    })
+    // en Fuerza queda sin lugar el más débil (10); en Destreza entra
+    const row = (await screen.findByText('Sin lugar')).closest('li') as HTMLElement
+    expect(row.textContent).toContain('Aumento pasivo')
+    expect(screen.getAllByText('Sin lugar')).toHaveLength(1)
   })
 
   it('barreras: la barrera de un jugador se edita a mano sin pasar por el combate', async () => {
@@ -1145,5 +1125,354 @@ describe('app', () => {
       if (i > 0) await waitFor(async () => expect((await points())[0].points).toBe(i))
     }
     await waitFor(async () => expect(await points()).toHaveLength(0))
+  })
+
+  /** Agrega un buff con el nombre, valor, tipo y duración dados sobre los stats marcados (además de Fuerza). */
+  async function addBuff(opts: { name: string; flat: number; type?: string; unit?: string; extra?: string[]; only?: string[] }) {
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: opts.name } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: String(opts.flat) } })
+    if (opts.type) fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: opts.type } })
+    if (opts.unit) fireEvent.change(screen.getByLabelText('Dura'), { target: { value: opts.unit } })
+    // el formulario recuerda los stats marcados: se parte siempre de solo Fuerza más los indicados
+    fireEvent.click(screen.getAllByText('Limpiar')[1])
+    for (const label of opts.only ?? ['Fuerza', ...(opts.extra ?? [])]) fireEvent.click(screen.getByLabelText(`Afecta a ${label}`))
+    fireEvent.click(screen.getByText('Agregar efecto'))
+  }
+
+  it('buffs: un buff de varios stats se ve como uno solo y se quita de una vez', async () => {
+    await openEdwardPanel()
+    await addBuff({ name: 'Furia', flat: 20, extra: ['Destreza', 'Constitución', 'Percepción'] })
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(4))
+
+    // una sola fila con los 4 stats
+    const row = (await screen.findAllByText('Furia'))[0].closest('li') as HTMLElement
+    expect(row.textContent).toContain('Fuerza, Destreza, Constitución, Percepción')
+    expect(screen.getAllByText('Furia')).toHaveLength(1)
+
+    fireEvent.click(await screen.findByLabelText('Quitar Furia'))
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(0))
+  })
+
+  it('buffs: se edita un buff completo (la habilidad sube de nivel) en todos sus stats', async () => {
+    await openEdwardPanel()
+    await addBuff({ name: 'Furia', flat: 20, extra: ['Destreza', 'Constitución'] })
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(3))
+    const groupBefore = (await edwardEffects())[0].group
+
+    fireEvent.click(await screen.findByLabelText('Editar Furia'))
+    expect(await screen.findByText(/Estás editando el buff completo/)).toBeTruthy()
+    expect((screen.getByLabelText('Valor fijo') as HTMLInputElement).value).toBe('20')
+    expect((screen.getByLabelText('Afecta a Constitución') as HTMLInputElement).checked).toBe(true)
+
+    // sube a 35, saca Constitución y suma Carisma
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '35' } })
+    fireEvent.click(screen.getByLabelText('Afecta a Constitución'))
+    fireEvent.click(screen.getByLabelText('Afecta a Carisma'))
+    fireEvent.click(screen.getByText('Guardar cambios'))
+
+    await waitFor(async () => {
+      const effects = await edwardEffects()
+      expect(effects.map((e) => e.target).sort()).toEqual(['carisma', 'destreza', 'fuerza'])
+      expect(effects.every((e) => e.flat === 35 && e.name === 'Furia')).toBe(true)
+      expect(new Set(effects.map((e) => e.group))).toEqual(new Set([groupBefore]))
+    })
+    expect(screen.queryByText('Cancelar edición')).toBeNull()
+  })
+
+  it('buffs: cancelar la edición no cambia nada', async () => {
+    await openEdwardPanel()
+    await addBuff({ name: 'Furia', flat: 20 })
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(1))
+    fireEvent.click(await screen.findByLabelText('Editar Furia'))
+    fireEvent.change(await screen.findByLabelText('Valor fijo'), { target: { value: '99' } })
+    fireEvent.click(screen.getByText('Cancelar edición'))
+    expect((await edwardEffects())[0].flat).toBe(20)
+    expect(screen.getByText('Agregar efecto')).toBeTruthy()
+  })
+
+  it('habilidad: "Terminó la habilidad" quita todos los efectos de la habilidad, sean del tipo que sean', async () => {
+    await openEdwardPanel()
+    // 1) tipo habilidad sobre varios stats
+    await addBuff({ name: 'Furia', flat: 20, type: 'habilidad', extra: ['Destreza', 'Constitución'] })
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(3))
+    // 2) otro tipo, pero que dura hasta que termine la habilidad
+    await addBuff({ name: 'Foco', flat: 10, type: 'potenciador', unit: 'habilidad' })
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(4))
+    // 3) un buff normal que no es de la habilidad
+    await addBuff({ name: 'Poción', flat: 5, type: 'pocion', unit: 'manual' })
+    await waitFor(async () => expect(await edwardEffects()).toHaveLength(5))
+
+    fireEvent.click(await screen.findByText('Terminó la habilidad'))
+    await waitFor(async () => {
+      const effects = await edwardEffects()
+      expect(effects.map((e) => e.name)).toEqual(['Poción'])
+    })
+  })
+
+  it('límite de buffs: se recorta, avisa, se puede operar por encima y se puede levantar', async () => {
+    await openEdwardPanel()
+    // Edward es C+ (límite 300): Inteligencia natural 115 y Carisma natural 173 → tope 473
+    await addBuff({ name: 'Sobrecarga', flat: 400, only: ['Inteligencia'] })
+    const caps = await screen.findByLabelText('Límite de los buffs')
+    await waitFor(() => expect(within(caps).getByLabelText('Buffs recortados').textContent).toContain('Inteligencia limitada a 473'))
+    expect(within(caps).getByLabelText('Buffs recortados').textContent).toContain('el buff daba +400 y solo suma +358')
+    expect(await screen.findByText('115 → 473 (+358)')).toBeTruthy()
+
+    // operar por encima del límite en ese stat
+    fireEvent.click(screen.getByLabelText('Operar por encima del límite: Inteligencia'))
+    await waitFor(async () => {
+      expect((await combatRepo.list())[0].participants[0].pc?.statCaps.open).toEqual(['inteligencia'])
+    })
+    expect(await screen.findByText('115 → 515 (+400)')).toBeTruthy()
+    expect(screen.getByLabelText('Operando por encima del límite').textContent).toContain('consecuencias')
+
+    // volver a poner el tope y levantar el límite 100 puntos
+    fireEvent.click(screen.getByText('Restablecer los topes'))
+    await waitFor(async () => expect((await combatRepo.list())[0].participants[0].pc?.statCaps.open).toEqual([]))
+    fireEvent.change(screen.getByLabelText('Aumento fijo sin origen'), { target: { value: '100' } })
+    await waitFor(async () => expect((await combatRepo.list())[0].participants[0].pc?.statCaps.raise).toBe(100))
+    expect(await screen.findByText('115 → 515 (+400)')).toBeTruthy() // 573 de tope: el buff entra entero
+    expect(screen.queryByLabelText('Buffs recortados')).toBeNull()
+  })
+
+  it('límite de buffs: un botón quita todos los topes', async () => {
+    await openEdwardPanel()
+    fireEvent.click(await screen.findByText('Quitar todos los topes'))
+    await waitFor(async () => {
+      expect((await combatRepo.list())[0].participants[0].pc?.statCaps.open).toHaveLength(7)
+    })
+    expect((screen.getByLabelText('Operar por encima del límite: Fuerza') as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('límite de buffs: los NPC también tienen la tarjeta', async () => {
+    await setUpDuel()
+    goTo('Turnos')
+    const names = await waitFor(() => {
+      const els = Array.from(document.querySelectorAll('.participant .name'))
+      if (els.length < 2) throw new Error('faltan participantes')
+      return els
+    })
+    fireEvent.click(names[1])
+    const card = await screen.findByLabelText('Límite de los buffs')
+    expect(card.textContent).toContain('grupo Medio')
+    expect(card.textContent).toContain('300')
+  })
+
+  it('espíritu: en el panel del jugador se sube de nivel hasta 10 y suma el 10 % del límite a los 7 stats', async () => {
+    await openEdwardPanel()
+    const card = await screen.findByLabelText('Espíritu')
+    expect(card.textContent).toContain('suma 30 a los 7 stats') // Edward es C+: límite 300
+
+    for (let i = 1; i <= 3; i++) {
+      fireEvent.click(screen.getByLabelText('Nivel de Espíritu: más'))
+      await waitFor(async () => expect((await edwardEffects()).filter((e) => e.typeId === 'espiritu')[0]?.level).toBe(i))
+    }
+    const spirit = (await edwardEffects()).filter((e) => e.typeId === 'espiritu')
+    expect(spirit).toHaveLength(7)
+    expect(spirit.every((e) => e.flat === 90 && e.duration.unit === 'manual')).toBe(true)
+    expect(new Set(spirit.map((e) => e.target)).size).toBe(7)
+
+    // sube y baja de nivel, y en 0 desaparece
+    fireEvent.click(screen.getByLabelText('Nivel de Espíritu: menos'))
+    await waitFor(async () => expect((await edwardEffects())[0].flat).toBe(60))
+    fireEvent.click(screen.getByLabelText('Nivel de Espíritu: menos'))
+    fireEvent.click(screen.getByLabelText('Nivel de Espíritu: menos'))
+    await waitFor(async () => expect(await edwardEffects()).toEqual([]))
+  })
+
+  it('espíritu: no pasa de nivel 10 y no cuenta para el límite de buffs', async () => {
+    await openEdwardPanel()
+    const more = screen.getByLabelText('Nivel de Espíritu: más')
+    for (let i = 0; i < 12; i++) fireEvent.click(more)
+    await waitFor(async () => expect((await edwardEffects())[0]?.level).toBe(10))
+    expect((await edwardEffects())[0].flat).toBe(300) // 100 % del límite
+    const caps = screen.getByLabelText('Límite de los buffs')
+    await waitFor(() => expect(caps.textContent).toContain('Espíritu +300 (aparte: no cuenta para el límite)'))
+  })
+
+  it('pestaña Buffs: un buff se aplica a varios combatientes de una vez', async () => {
+    await setUpDuel()
+    goTo('Buffs')
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Bendición' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '20' } })
+    fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
+    fireEvent.click(screen.getByText('Aplicar a 2 combatiente(s)'))
+
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      for (const p of c.participants) {
+        const effects = p.pc?.effects ?? p.npc?.effects ?? []
+        expect(effects.map((e) => e.target).sort()).toEqual(['destreza', 'fuerza'])
+        expect(effects.every((e) => e.name === 'Bendición' && e.flat === 20)).toBe(true)
+      }
+      // cada combatiente recibe su propio buff
+      const groups = c.participants.map((p) => (p.pc?.effects ?? p.npc?.effects ?? [])[0].group)
+      expect(new Set(groups).size).toBe(2)
+    })
+    // y se ve en el resumen de cada uno
+    expect((await screen.findByLabelText('Efectos de Goblin')).textContent).toContain('Bendición')
+    expect(screen.getByLabelText('Efectos de Edward').textContent).toContain('Fuerza, Destreza')
+  })
+
+  it('pestaña Buffs: aplica solo a los elegidos y avisa si no hay nadie', async () => {
+    await setUpDuel()
+    goTo('Buffs')
+    fireEvent.change(await screen.findByLabelText('Valor fijo'), { target: { value: '20' } })
+    fireEvent.click(screen.getByText('Aplicar a 0 combatiente(s)'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Elige a quiénes')
+
+    fireEvent.click(screen.getByText('Enemigos'))
+    fireEvent.click(await screen.findByText('Aplicar a 1 combatiente(s)'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.effects).toHaveLength(1)
+      expect(c.participants.find((p) => p.name === 'Edward')?.pc?.effects).toHaveLength(0)
+    })
+  })
+
+  it('pestaña Buffs: un debuff a varios y quitarlo desde el resumen', async () => {
+    await setUpDuel()
+    goTo('Buffs')
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Clase'), { target: { value: 'debuff' } })
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Maldición' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '15' } })
+    fireEvent.click(screen.getByText('Los 7 stats'))
+    fireEvent.click(screen.getByText('Aplicar a 2 combatiente(s)'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.every((p) => (p.pc?.effects ?? p.npc?.effects ?? []).length === 7)).toBe(true)
+    })
+
+    fireEvent.click(await screen.findByLabelText('Quitar Maldición de Goblin'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.effects).toHaveLength(0)
+      expect(c.participants.find((p) => p.name === 'Edward')?.pc?.effects).toHaveLength(7)
+    })
+  })
+
+  it('pestaña Buffs: el Espíritu se aplica a varios con el valor de cada rango, y se quita con nivel 0', async () => {
+    await setUpDuel()
+    goTo('Buffs')
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.click(screen.getByText('Espíritu', { selector: 'button' }))
+    fireEvent.change(await screen.findByLabelText('Nivel de Espíritu'), { target: { value: '3' } })
+    // Edward (C+) y el Goblin (C+) son grupo Medio: 30 por nivel
+    expect(screen.getByText(/Edward \(C\+, Medio\): \+30 por nivel/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Aplicar Espíritu a 2 combatiente(s)'))
+
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      for (const p of c.participants) {
+        const spirit = (p.pc?.effects ?? p.npc?.effects ?? []).filter((e) => e.typeId === 'espiritu')
+        expect(spirit).toHaveLength(7)
+        expect(spirit.every((e) => e.flat === 90 && e.level === 3)).toBe(true)
+      }
+    })
+
+    fireEvent.change(screen.getByLabelText('Nivel de Espíritu'), { target: { value: '0' } })
+    fireEvent.click(screen.getByText('Quitar Espíritu a 2 combatiente(s)'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.every((p) => (p.pc?.effects ?? p.npc?.effects ?? []).length === 0)).toBe(true)
+    })
+  })
+
+  it('pestaña Buffs: "Terminó la habilidad" a varios quita lo de la habilidad solo a los elegidos', async () => {
+    await setUpDuel()
+    goTo('Buffs')
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'habilidad' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '20' } })
+    fireEvent.click(screen.getByText('Aplicar a 2 combatiente(s)'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.every((p) => (p.pc?.effects ?? p.npc?.effects ?? []).length === 1)).toBe(true)
+    })
+
+    fireEvent.click(screen.getByText('Enemigos'))
+    fireEvent.click(await screen.findByText('Terminó la habilidad de 1 combatiente(s)'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      expect(c.participants.find((p) => p.name === 'Goblin')?.npc?.effects).toHaveLength(0)
+      expect(c.participants.find((p) => p.name === 'Edward')?.pc?.effects).toHaveLength(1)
+    })
+  })
+
+  it('aumento del límite: se agrega con su origen, sube el límite y "Terminó la habilidad" lo quita', async () => {
+    await openEdwardPanel()
+    await addBuff({ name: 'Sobrecarga', flat: 400, only: ['Inteligencia'] })
+    expect(await screen.findByText('115 → 473 (+358)')).toBeTruthy() // recortado por el límite de 300
+
+    // no se elige entre los stats, tiene su propio formulario
+    expect(screen.queryByLabelText('Afecta a Aumento del límite')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Origen del aumento'), { target: { value: 'habilidad' } })
+    fireEvent.change(screen.getByLabelText('Nombre del aumento'), { target: { value: 'Furia' } })
+    fireEvent.change(screen.getByLabelText('Aumento fijo del límite'), { target: { value: '100' } })
+    fireEvent.click(screen.getByText('Agregar aumento'))
+
+    await waitFor(async () => {
+      const raise = (await edwardEffects()).find((e) => e.target === 'limite')
+      expect(raise).toMatchObject({ name: 'Furia', typeId: 'habilidad', flat: 100, kind: 'buff' })
+      expect(raise?.duration.unit).toBe('habilidad') // una habilidad dura hasta que termine
+    })
+    // el límite pasa a 400 y el buff entra entero
+    expect(await screen.findByText('115 → 515 (+400)')).toBeTruthy()
+    expect(screen.getByLabelText('Cuenta del límite').textContent).toContain('Límite base 300 + 100 (Furia, Aumento por habilidad) = 400')
+
+    fireEvent.click(await screen.findByText('Terminó la habilidad'))
+    await waitFor(async () => expect((await edwardEffects()).some((e) => e.target === 'limite')).toBe(false))
+    expect(await screen.findByText('115 → 473 (+358)')).toBeTruthy()
+  })
+
+  it('aumento del límite: se edita desde su propio formulario y se suma al de otro origen', async () => {
+    await openEdwardPanel()
+    fireEvent.change(screen.getByLabelText('Origen del aumento'), { target: { value: 'estado' } })
+    fireEvent.change(screen.getByLabelText('Nombre del aumento'), { target: { value: 'Enfurecido' } })
+    fireEvent.change(screen.getByLabelText('Aumento fijo del límite'), { target: { value: '50' } })
+    fireEvent.click(screen.getByText('Agregar aumento'))
+    await waitFor(async () => expect((await edwardEffects()).filter((e) => e.target === 'limite')).toHaveLength(1))
+
+    fireEvent.click(await screen.findByLabelText('Editar Enfurecido'))
+    expect(await screen.findByText('Editar aumento del límite')).toBeTruthy()
+    expect((screen.getByLabelText('Aumento fijo del límite') as HTMLInputElement).value).toBe('50')
+    fireEvent.change(screen.getByLabelText('Aumento fijo del límite'), { target: { value: '150' } })
+    fireEvent.click(screen.getByText('Guardar aumento'))
+    await waitFor(async () => {
+      const raises = (await edwardEffects()).filter((e) => e.target === 'limite')
+      expect(raises).toHaveLength(1)
+      expect(raises[0].flat).toBe(150)
+    })
+    await waitFor(() => expect(screen.getByLabelText('Cuenta del límite').textContent).toContain('= 450'))
+  })
+
+  it('aumento del límite: sin valor avisa y no agrega nada', async () => {
+    await openEdwardPanel()
+    fireEvent.click(screen.getByText('Agregar aumento'))
+    expect((await screen.findAllByRole('alert'))[0].textContent).toContain('Indica cuánto sube el límite')
+    expect(await edwardEffects()).toEqual([])
+  })
+
+  it('pestaña Buffs: el aumento del límite se aplica a varios, aparte del Espíritu', async () => {
+    await setUpDuel()
+    goTo('Buffs')
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.click(screen.getByText('Aumento del límite', { selector: 'button' }))
+    fireEvent.change(await screen.findByLabelText('Origen del aumento'), { target: { value: 'estado' } })
+    fireEvent.change(screen.getByLabelText('Nombre del aumento'), { target: { value: 'Furia' } })
+    fireEvent.change(screen.getByLabelText('Aumento fijo del límite'), { target: { value: '80' } })
+    fireEvent.click(screen.getByText('Aplicar a 2 combatiente(s)'))
+    await waitFor(async () => {
+      const [c] = await combatRepo.list()
+      for (const p of c.participants) {
+        const raises = (p.pc?.effects ?? p.npc?.effects ?? []).filter((e) => e.target === 'limite')
+        expect(raises).toHaveLength(1)
+        expect(raises[0]).toMatchObject({ typeId: 'estado', flat: 80, name: 'Furia' })
+      }
+    })
+    expect((await screen.findByLabelText('Efectos de Edward')).textContent).toContain('Aumento del límite')
   })
 })

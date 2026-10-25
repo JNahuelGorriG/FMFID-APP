@@ -1,5 +1,8 @@
 import { tickDurations } from './durations'
+import { addEffects, endSkill, removeGroup } from './effects'
 import type { Effect } from './effects'
+import { withSpirit } from './spirit'
+import type { RankGroup } from './ranks'
 import type { EnemyProfile } from './enemy'
 import type { Character } from './character'
 import { initialNpcState, initialPcState } from './state'
@@ -145,6 +148,54 @@ export function updateParticipant(
 
 export function setInitiative(combat: Combat, participantId: string, initiative: number | null): Combat {
   return updateParticipant(combat, participantId, (p) => ({ ...p, initiative }))
+}
+
+const effectsOf = (p: Participant): Effect[] => p.pc?.effects ?? p.npc?.effects ?? []
+
+function withEffects(p: Participant, effects: Effect[]): Participant {
+  if (p.pc) return { ...p, pc: { ...p.pc, effects } }
+  if (p.npc) return { ...p, npc: { ...p.npc, effects } }
+  return p
+}
+
+/**
+ * Aplica buffs o debuffs a varios combatientes a la vez. Entran todos: si en algún stat ya hay 4, los
+ * 4 más fuertes (y más recientes) quedan activos y los demás listados sin lugar.
+ */
+export function addEffectsToMany(combat: Combat, byParticipant: Record<string, Effect[]>): Combat {
+  return {
+    ...combat,
+    participants: combat.participants.map((p) =>
+      byParticipant[p.id] ? withEffects(p, addEffects(effectsOf(p), byParticipant[p.id])) : p,
+    ),
+  }
+}
+
+/** "Terminó la habilidad" para varios combatientes: quita lo que termina con ella. */
+export function endSkillForMany(combat: Combat, ids: string[]): Combat {
+  return {
+    ...combat,
+    participants: combat.participants.map((p) =>
+      ids.includes(p.id) ? withEffects(p, endSkill(effectsOf(p)).effects) : p,
+    ),
+  }
+}
+
+/** Quita un buff o debuff entero (todos sus stats) de un combatiente. */
+export function removeEffectGroupFrom(combat: Combat, participantId: string, group: string): Combat {
+  return updateParticipant(combat, participantId, (p) => withEffects(p, removeGroup(effectsOf(p), group)))
+}
+
+/** Pone el nivel de Espíritu (0 a 10) de varios combatientes. Cada uno recibe su valor según su rango. */
+export function setSpiritForMany(
+  combat: Combat,
+  entries: { id: string; level: number; group: RankGroup }[],
+): Combat {
+  let next = combat
+  for (const { id, level, group } of entries) {
+    next = updateParticipant(next, id, (p) => withEffects(p, withSpirit(effectsOf(p), level, group, combat.id)))
+  }
+  return next
 }
 
 /** Marca a un NPC como aliado o enemigo. Los jugadores siempre son "jugador". */

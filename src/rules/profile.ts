@@ -1,6 +1,7 @@
 import { characterSheet } from './character'
 import type { Character } from './character'
 import type { Participant, Side } from './combat'
+import type { ResolvedEffect } from './effects'
 import type { Techniques } from './derived'
 import { ceilTo } from './energy'
 import { effectiveCharacter, effectiveEnemy } from './effective'
@@ -35,6 +36,8 @@ export interface Profile {
   defense: Record<AttackType, { ca: number; sa: number }>
   armor: ArmorState | null
   health: string
+  /** Buffs y debuffs con su estado (activo, pisado, sin lugar). */
+  resolved: ResolvedEffect[]
 }
 
 const SIZE_LABELS = { pequena: 'Pequeña', mediana: 'Mediana', grande: 'Grande', pesada: 'Pesada' } as const
@@ -51,7 +54,7 @@ const weaponLabel = (weapon: WeaponState): string => `${SIZE_LABELS[weapon.size]
 export function buildProfile(participant: Participant, character?: Character): Profile | null {
   if (participant.pc) {
     if (!character) return null
-    const view = effectiveCharacter(character, participant.pc.effects)
+    const view = effectiveCharacter(character, participant.pc.effects, participant.pc.statCaps)
     const d = view.derived
     const h = participant.pc.health
     const weapon = participant.pc.weapon
@@ -85,11 +88,12 @@ export function buildProfile(participant: Participant, character?: Character): P
       },
       armor: participant.pc.armor,
       health: `${h.leve} · ${h.medio} · ${h.letal}`,
+      resolved: view.resolved,
     }
   }
   if (participant.npc) {
     const n = participant.npc
-    const view = effectiveEnemy(n.profile, n.effects)
+    const view = effectiveEnemy(n.profile, n.effects, n.statCaps)
     const s = view.sheet
     const rank = RANKS.find((r) => r.name === n.profile.rank)
     const weapon = n.weapon
@@ -120,6 +124,7 @@ export function buildProfile(participant: Participant, character?: Character): P
       },
       armor: null,
       health: `${n.hpCurrent} / ${n.hpMax}`,
+      resolved: view.resolved,
     }
   }
   return null

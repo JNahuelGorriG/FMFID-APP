@@ -106,6 +106,19 @@ export class AppDB extends Dexie {
         const combats: Combat[] = await tx.table('combats').toArray()
         await tx.table('combats').bulkPut(combats.map(normalizeCombat))
       })
+    // Versión 8: límite de los buffs de cada combatiente.
+    this.version(8)
+      .stores({
+        characters: 'id, name, playerName, retired',
+        changes: 'id, characterId, at',
+        npcs: 'id, name, kind, rank, realm, guild, race',
+        combats: 'id, status, updatedAt',
+        settings: 'key',
+      })
+      .upgrade(async (tx) => {
+        const combats: Combat[] = await tx.table('combats').toArray()
+        await tx.table('combats').bulkPut(combats.map(normalizeCombat))
+      })
   }
 }
 

@@ -1,5 +1,5 @@
 import type { AppDB } from './db'
-import { DEFAULT_EFFECT_TYPES, DEFAULT_TECHNIQUE_TARGETS, SKILL_TYPE_ID } from '../rules'
+import { DEFAULT_EFFECT_TYPES, DEFAULT_TECHNIQUE_TARGETS, SKILL_TYPE_ID, SPIRIT_TYPE_ID } from '../rules'
 import type { EffectType, Techniques, TechniqueTarget } from '../rules'
 
 const EFFECT_TYPES_KEY = 'effectTypes'
@@ -18,7 +18,12 @@ export function createSettingsRepository(db: AppDB) {
     /** Tipos de buff. Si nunca se editaron, los de fábrica. */
     async getEffectTypes(): Promise<EffectType[]> {
       const row = await db.settings.get(EFFECT_TYPES_KEY)
-      return Array.isArray(row?.value) ? (row.value as EffectType[]) : DEFAULT_EFFECT_TYPES
+      if (!Array.isArray(row?.value)) return DEFAULT_EFFECT_TYPES
+      const saved = row.value as EffectType[]
+      // Los tipos guardados antes de que existiera Espíritu lo reciben al final, sin perder los editados.
+      return saved.some((t) => t.id === SPIRIT_TYPE_ID)
+        ? saved
+        : [...saved, { id: SPIRIT_TYPE_ID, name: 'Espíritu' }]
     },
 
     /** A qué suma cada potenciación (Kyushu, Ki...). Lo no guardado usa el valor de fábrica. */
@@ -42,6 +47,9 @@ export function createSettingsRepository(db: AppDB) {
     async saveEffectTypes(types: EffectType[]): Promise<void> {
       if (!types.some((t) => t.id === SKILL_TYPE_ID)) {
         throw new Error('El tipo "habilidad" no se puede quitar.')
+      }
+      if (!types.some((t) => t.id === SPIRIT_TYPE_ID)) {
+        throw new Error('El tipo "Espíritu" no se puede quitar.')
       }
       if (types.some((t) => t.name.trim() === '')) throw new Error('Los tipos necesitan nombre.')
       await db.settings.put({ key: EFFECT_TYPES_KEY, value: types })

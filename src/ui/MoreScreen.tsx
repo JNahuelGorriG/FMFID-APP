@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import { db, exportBackup, importBackup, importFromExcel } from '../db'
 import { SKILL_TYPE_ID } from '../rules'
-import { EFFECT_TARGETS, TECHNIQUES } from '../rules'
+import { PICKABLE_TARGETS, SPIRIT_TYPE_ID, TECHNIQUES } from '../rules'
 import type { EffectType, TechniqueTarget, Techniques } from '../rules'
 import { settingsRepo } from './data'
 import { SelectField, TextField } from './fields'
@@ -34,7 +34,7 @@ function EffectTypesEditor() {
     <div className="card">
       <h2>Tipos de buff</h2>
       <p className="muted small">
-        Se usan en buffs y debuffs. El tipo de habilidad tiene reglas especiales y no se puede quitar.
+        Se usan en buffs y debuffs. Los tipos Habilidad y Espíritu tienen reglas especiales y no se pueden quitar.
       </p>
       {types.map((t, i) => (
         <div key={t.id} className="row">
@@ -45,7 +45,7 @@ function EffectTypesEditor() {
               onChange={(name) => edit(types.map((x) => (x.id === t.id ? { ...x, name } : x)))}
             />
           </div>
-          {t.id !== SKILL_TYPE_ID && (
+          {t.id !== SKILL_TYPE_ID && t.id !== SPIRIT_TYPE_ID && (
             <button
               className="icon-btn"
               aria-label={`Quitar ${t.name}`}
@@ -79,7 +79,7 @@ function EffectTypesEditor() {
 const TECHNIQUE_TARGET_OPTIONS: { value: TechniqueTarget; label: string }[] = [
   { value: 'preguntar', label: 'Preguntar cada vez' },
   { value: 'ofensivo', label: 'Stat ofensivo (Fuerza o Destreza)' },
-  ...EFFECT_TARGETS.map((t) => ({ value: t as TechniqueTarget, label: TARGET_LABELS[t] })),
+  ...PICKABLE_TARGETS.map((t) => ({ value: t as TechniqueTarget, label: TARGET_LABELS[t] })),
 ]
 
 function TechniqueTargetsEditor() {

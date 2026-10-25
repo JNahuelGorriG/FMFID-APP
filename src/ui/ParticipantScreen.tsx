@@ -7,6 +7,8 @@ import {
   addAlert,
   applyHealing,
   armorFromTable,
+  baseLimit,
+  defaultStatCaps,
   batteryGainFromRoll,
   chargeBattery,
   claimSaveFromBattery,
@@ -16,6 +18,8 @@ import {
   naturalBases,
   recordAction,
   removeParticipant,
+  spiritLevel,
+  withSpirit,
   updateParticipant,
 } from '../rules'
 import type {
@@ -31,6 +35,7 @@ import type {
   Participant,
   PcBarrier,
   PcState,
+  ResolvedEffect,
   Techniques,
   TechniqueTarget,
 } from '../rules'
@@ -38,6 +43,8 @@ import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
 import { clampSaturation } from '../rules'
 import { SaturationCard } from './SaturationCard'
+import { SpiritCard } from './SpiritCard'
+import { StatCapsCard } from './StatCapsCard'
 import { WeaponCard } from './WeaponCard'
 import { NumberField, SelectField, Stepper } from './fields'
 import { STAT_LABELS, describeDuration, fmt, woundsText } from './format'
@@ -158,6 +165,17 @@ function BarrierDuration({
   )
 }
 
+/** Los aumentos del límite que están activos, con su origen, para mostrar de dónde sale cada uno. */
+function raisesOf(resolved: ResolvedEffect[], types: EffectType[]) {
+  return resolved
+    .filter((r) => r.effect.target === 'limite' && r.state === 'activo')
+    .map((r) => ({
+      id: r.effect.id,
+      label: `${r.effect.name}, ${types.find((t) => t.id === r.effect.typeId)?.name ?? r.effect.typeId}`,
+      amount: r.effect.kind === 'buff' ? r.amount : -r.amount,
+    }))
+}
+
 function ChangedValues({ rows }: { rows: [string, number, number][] }) {
   if (rows.length === 0) return null
   return (
@@ -198,9 +216,9 @@ function PcPanel({
       updateParticipant(c, participantId, (p) => (p.pc ? { ...p, pc: change(p.pc) } : p)),
     )
 
-  const view = effectiveCharacter(character, pc.effects)
+  const view = effectiveCharacter(character, pc.effects, pc.statCaps)
   const sheet = view.natural
-  const bases = naturalBases(sheet.totals, sheet.derived)
+  const bases = naturalBases(sheet.totals, sheet.derived, baseLimit(sheet.rank?.group ?? 'bajo'))
   const base = character.baseHealth
   const state = pc
   const saturation = pc.saturation ?? 0
@@ -597,6 +615,17 @@ function PcPanel({
         )}
       </div>
 
+      <SpiritCard
+        level={spiritLevel(state.effects)}
+        group={sheet.rank?.group ?? 'bajo'}
+        onAdjust={(delta) =>
+          void update((s) => ({
+            ...s,
+            effects: withSpirit(s.effects, spiritLevel(s.effects) + delta, sheet.rank?.group ?? 'bajo', combat.id),
+          }))
+        }
+      />
+
       <EffectsPanel
         effects={state.effects}
         bases={bases}
@@ -606,6 +635,16 @@ function PcPanel({
         techniques={sheet.derived.techniques}
         techniqueTargets={targets}
         offensiveStat={character.derived.agilityStat === 'fuerza' ? 'fuerza' : 'destreza'}
+      />
+
+      <StatCapsCard
+        caps={state.statCaps ?? defaultStatCaps()}
+        info={view.caps}
+        group={sheet.rank?.group ?? 'bajo'}
+        rankName={sheet.rank?.name ?? null}
+        limitRaise={view.limitRaise}
+        raises={raisesOf(view.resolved, types)}
+        onChange={(change) => void update((s) => ({ ...s, statCaps: change(s.statCaps ?? defaultStatCaps()) }))}
       />
 
       <ChangedValues rows={rows} />
@@ -631,8 +670,8 @@ function NpcPanel({
       updateParticipant(c, participant.id, (p) => (p.npc ? { ...p, npc: change(p.npc) } : p)),
     )
 
-  const view = effectiveEnemy(npc.profile, npc.effects)
-  const bases = naturalBases(view.natural.stats, view.natural)
+  const view = effectiveEnemy(npc.profile, npc.effects, npc.statCaps)
+  const bases = naturalBases(view.natural.stats, view.natural, baseLimit(view.natural.rank.group))
 
   const [points, setPoints] = useState(0)
   const [unit, setUnit] = useState<DurationUnit>('rondas')
@@ -775,6 +814,17 @@ function NpcPanel({
         ))}
       </div>
 
+      <SpiritCard
+        level={spiritLevel(npc.effects)}
+        group={view.natural.rank.group}
+        onAdjust={(delta) =>
+          void update((n) => ({
+            ...n,
+            effects: withSpirit(n.effects, spiritLevel(n.effects) + delta, view.natural.rank.group, combat.id),
+          }))
+        }
+      />
+
       <EffectsPanel
         effects={npc.effects}
         bases={bases}
@@ -784,6 +834,16 @@ function NpcPanel({
         techniques={view.natural.techniques}
         techniqueTargets={targets}
         offensiveStat="destreza"
+      />
+
+      <StatCapsCard
+        caps={npc.statCaps ?? defaultStatCaps()}
+        info={view.caps}
+        group={view.natural.rank.group}
+        rankName={view.natural.rank.name}
+        limitRaise={view.limitRaise}
+        raises={raisesOf(view.resolved, types)}
+        onChange={(change) => void update((n) => ({ ...n, statCaps: change(n.statCaps ?? defaultStatCaps()) }))}
       />
 
       <ChangedValues rows={rows} />

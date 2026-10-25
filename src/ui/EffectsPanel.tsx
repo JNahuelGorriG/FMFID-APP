@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   SKILL_TYPE_ID,
+  SPIRIT_TYPE_ID,
   TECHNIQUES,
-  addEffectWithChoice,
   addEffects,
+  effectGroup,
   endSkill,
+  groupEffects,
+  isSkillEffect,
+  limitRaiseEffect,
+  removeGroup,
   resolveEffects,
   resolveTechniqueTarget,
 } from '../rules'
@@ -15,12 +20,14 @@ import type {
   EffectKind,
   EffectTarget,
   EffectType,
+  LimitRaiseFields,
   TechniqueTarget,
   Techniques,
 } from '../rules'
 import { NumberField, SelectField, TextField } from './fields'
+import { LimitRaiseForm } from './LimitRaiseForm'
 import { TargetPicker } from './TargetPicker'
-import { DURATION_LABELS, TARGET_LABELS, describeAmount, describeDuration } from './format'
+import { DURATION_LABELS, EFFECT_STATE_LABELS, TARGET_LABELS, describeAmount, describeDuration } from './format'
 
 interface Props {
   effects: Effect[]
@@ -36,7 +43,7 @@ interface Props {
   offensiveStat?: 'fuerza' | 'destreza'
 }
 
-const STATE_LABELS = { activo: 'Activo', pisado: 'Pisado', suspendido: 'Suspendido' } as const
+const STATE_LABELS = EFFECT_STATE_LABELS
 const DURATION_OPTIONS = (Object.keys(DURATION_LABELS) as DurationUnit[]).map((u) => ({
   value: u,
   label: DURATION_LABELS[u],
@@ -61,7 +68,10 @@ export function EffectsPanel({
   const [unit, setUnit] = useState<DurationUnit>('turnos')
   const [remaining, setRemaining] = useState(3)
   const [error, setError] = useState('')
-  const [pending, setPending] = useState<{ base: Effect[]; effect: Effect; occupants: Effect[]; rest: Effect[] } | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editingRaise, setEditingRaise] = useState<string | null>(null)
+  const formTop = useRef<HTMLHeadingElement>(null)
+  const raiseTop = useRef<HTMLHeadingElement>(null)
   const [techKey, setTechKey] = useState<keyof Techniques>('kyushu')
   const [techTargets, setTechTargets] = useState<EffectTarget[] | null>(null)
   const [techType, setTechType] = useState(SKILL_TYPE_ID)
@@ -73,7 +83,8 @@ export function EffectsPanel({
   const presetTarget = resolveTechniqueTarget(techniqueTargets?.[techKey] ?? 'preguntar', offensiveStat)
   const chosenTechTargets: EffectTarget[] = techTargets ?? (presetTarget ? [presetTarget] : [])
   const typeName = (id: string) => types.find((t) => t.id === id)?.name ?? id
-  const hasSkill = effects.some((e) => e.typeId === SKILL_TYPE_ID)
+  const hasSkill = effects.some(isSkillEffect)
+  const groups = groupEffects(resolved)
 
   function add() {
     if (targets.length === 0) return setError('Elige al menos un stat.')
@@ -82,34 +93,71 @@ export function EffectsPanel({
       return setError('La duración debe ser de al menos 1.')
     }
     setError('')
-    submit(
-      targets.map((target) => ({
-        id: crypto.randomUUID(),
-        kind,
-        name: name.trim() || typeName(typeId),
-        typeId,
-        target,
-        flat,
-        percent,
-        duration: { unit, remaining: unit === 'turnos' || unit === 'rondas' ? remaining : 0 },
-        combatId,
-        createdAt: new Date().toISOString(),
-      })),
-    )
+    const original = editing ? effects.find((e) => effectGroup(e) === editing) : undefined
+    const group = editing ?? crypto.randomUUID()
+    const list: Effect[] = targets.map((target) => ({
+      id: crypto.randomUUID(),
+      kind,
+      name: name.trim() || typeName(typeId),
+      typeId,
+      target,
+      flat,
+      percent,
+      duration: { unit, remaining: unit === 'turnos' || unit === 'rondas' ? remaining : 0 },
+      combatId: original ? original.combatId : combatId,
+      createdAt: original ? original.createdAt : new Date().toISOString(),
+      group,
+    }))
+    // Al editar, el grupo viejo sale y entra la versión nueva (en todos sus stats).
+    submit(list, editing ? removeGroup(effects, editing) : effects)
+    setEditing(null)
+  }
+
+  /** Carga un buff o debuff en el formulario para editarlo (valor, stats, duración, nombre). */
+  function startEdit(group: string) {
+    const members = effects.filter((e) => effectGroup(e) === group)
+    const first = members[0]
+    if (!first) return
+    if (first.target === 'limite') {
+      setEditingRaise(group)
+      requestAnimationFrame(() => raiseTop.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
+      return
+    }
+    setEditing(group)
+    setKind(first.kind)
+    setName(first.name)
+    setTypeId(first.typeId)
+    setTargets(members.map((m) => m.target))
+    setFlat(first.flat)
+    setPercent(first.percent)
+    setUnit(first.duration.unit)
+    setRemaining(Math.max(1, first.duration.remaining || 3))
+    setError('')
+    // El formulario está más abajo: se lleva a la vista para no perder tiempo buscándolo.
+    requestAnimationFrame(() => formTop.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
+  }
+
+  /** Agrega un aumento del límite, o reemplaza el que se está editando. */
+  function submitRaise(fields: LimitRaiseFields) {
+    const original = editingRaise ? effects.find((e) => effectGroup(e) === editingRaise) : undefined
+    const group = editingRaise ?? crypto.randomUUID()
+    const effect = limitRaiseEffect(fields, original ? original.combatId : combatId, group)
+    onChange(addEffects(editingRaise ? removeGroup(effects, editingRaise) : effects, [effect]))
+    setEditingRaise(null)
+  }
+
+  function cancelEdit() {
+    setEditing(null)
+    setName('')
+    setError('')
   }
 
   /**
-   * Agrega los efectos (uno por stat). Si en algún stat ya hay 4 activos, pide elegir cuál sale y,
-   * resuelto eso, sigue con los que faltan.
+   * Agrega los efectos (uno por stat). Entran todos: si en un stat ya hay 4, quedan activos los 4 más
+   * fuertes (y más recientes) y el resto aparece en la lista como "Sin lugar", sin efecto.
    */
   function submit(list: Effect[], base: Effect[] = effects) {
-    const result = addEffects(base, list, bases)
-    if (result.blocked) {
-      setPending({ base: result.effects, ...result.blocked })
-      return
-    }
-    setPending(null)
-    onChange(result.effects)
+    onChange(addEffects(base, list))
     setName('')
   }
 
@@ -118,8 +166,10 @@ export function EffectsPanel({
     if (chosenTechTargets.length === 0) return setError('Elige a qué stat suma la potenciación.')
     const info = TECHNIQUES.find((t) => t.key === techKey)
     setError('')
+    const group = crypto.randomUUID()
     submit(
       chosenTechTargets.map((target) => ({
+        group,
         id: crypto.randomUUID(),
         kind: 'buff' as const,
         name: info?.name ?? techKey,
@@ -137,48 +187,52 @@ export function EffectsPanel({
     )
   }
 
-  function choose(action: 'remove' | 'suspend', id: string) {
-    if (!pending) return
-    const base = addEffectWithChoice(pending.base, pending.effect, { action, id })
-    submit(pending.rest, base)
-  }
-
-  /** Salta el stat que no entró y sigue con los que faltan. */
-  function skipBlocked() {
-    if (!pending) return
-    submit(pending.rest, pending.base)
-  }
-
   return (
     <div className="card">
       <h2>Buffs y debuffs</h2>
 
       {resolved.length === 0 && <p className="muted small">Sin efectos.</p>}
       <ul className="history">
-        {resolved.map(({ effect, state }) => (
-          <li key={effect.id} className="effect-row">
-            <div className="grow">
-              <div>
-                <span className={effect.kind === 'buff' ? 'tag buff' : 'tag debuff'}>
-                  {effect.kind === 'buff' ? 'Buff' : 'Debuff'}
-                </span>{' '}
-                {effect.name}
+        {groups.map(({ group, items }) => {
+          const first = items[0].effect
+          const states = [...new Set(items.map((i) => i.state))]
+          const sameAmount = items.every((i) => i.effect.flat === first.flat && i.effect.percent === first.percent)
+          return (
+            <li key={group} className={editing === group || editingRaise === group ? 'effect-row editing' : 'effect-row'}>
+              <div className="grow">
+                <div>
+                  <span className={first.kind === 'buff' ? 'tag buff' : 'tag debuff'}>
+                    {first.kind === 'buff' ? 'Buff' : 'Debuff'}
+                  </span>{' '}
+                  {first.name}
+                </div>
+                <div className="small muted">
+                  {items.map((i) => TARGET_LABELS[i.effect.target]).join(', ')}{' '}
+                  {sameAmount ? describeAmount(first) : '(valores distintos)'} · {typeName(first.typeId)} ·{' '}
+                  {describeDuration(first.duration)}
+                </div>
+                {items.length > 1 && states.length > 1 && (
+                  <div className="small muted">
+                    {items.map((i) => `${TARGET_LABELS[i.effect.target]}: ${STATE_LABELS[i.state].toLowerCase()}`).join(' · ')}
+                  </div>
+                )}
               </div>
-              <div className="small muted">
-                {TARGET_LABELS[effect.target]} {describeAmount(effect)} · {typeName(effect.typeId)} ·{' '}
-                {describeDuration(effect.duration)}
-              </div>
-            </div>
-            <span className={state === 'activo' ? 'chip' : 'chip off'}>{STATE_LABELS[state]}</span>
-            <button
-              className="icon-btn"
-              aria-label={`Quitar ${effect.name}`}
-              onClick={() => onChange(effects.filter((e) => e.id !== effect.id))}
-            >
-              ×
-            </button>
-          </li>
-        ))}
+              <span className={states.length === 1 && states[0] === 'activo' ? 'chip' : 'chip off'}>
+                {states.length === 1 ? STATE_LABELS[states[0]] : 'Mixto'}
+              </span>
+              <button className="btn secondary compact" aria-label={`Editar ${first.name}`} onClick={() => startEdit(group)}>
+                Editar
+              </button>
+              <button
+                className="icon-btn"
+                aria-label={`Quitar ${first.name}`}
+                onClick={() => onChange(removeGroup(effects, group))}
+              >
+                ×
+              </button>
+            </li>
+          )
+        })}
       </ul>
 
       {hasSkill && (
@@ -203,7 +257,7 @@ export function EffectsPanel({
             <SelectField
               label="Tipo de la potenciación"
               value={techType}
-              options={types.map((t) => ({ value: t.id, label: t.name }))}
+              options={types.filter((t) => t.id !== SPIRIT_TYPE_ID).map((t) => ({ value: t.id, label: t.name }))}
               onChange={(v) => {
                 setTechType(v)
                 setTechUnit(v === SKILL_TYPE_ID ? 'habilidad' : 'turnos')
@@ -226,7 +280,14 @@ export function EffectsPanel({
         </>
       )}
 
-      <h2 className="spaced">Agregar a mano</h2>
+      <h2 className="spaced" ref={formTop}>
+        {editing ? 'Editar buff o debuff' : 'Agregar a mano'}
+      </h2>
+      {editing && (
+        <p className="muted small">
+          Estás editando el buff completo (todos sus stats). Al guardar, reemplaza al anterior.
+        </p>
+      )}
       <div className="grid-2">
         <SelectField
           label="Clase"
@@ -240,7 +301,7 @@ export function EffectsPanel({
         <SelectField
           label="Tipo"
           value={typeId}
-          options={types.map((t) => ({ value: t.id, label: t.name }))}
+          options={types.filter((t) => t.id !== SPIRIT_TYPE_ID).map((t) => ({ value: t.id, label: t.name }))}
           onChange={(v) => {
             setTypeId(v)
             if (v === SKILL_TYPE_ID) setUnit('habilidad')
@@ -260,39 +321,42 @@ export function EffectsPanel({
           {error}
         </p>
       )}
-      <button className="btn" onClick={add}>
-        Agregar efecto
-      </button>
-
-      {pending && (
-        <div className="card nested" role="alert">
-          <p>
-            Ya hay {pending.occupants.length} {pending.effect.kind === 'buff' ? 'buffs' : 'debuffs'} activos sobre{' '}
-            {TARGET_LABELS[pending.effect.target]}. Elige cuál sale para que entre "{pending.effect.name}".
-          </p>
-          {pending.occupants.map((o) => (
-            <div key={o.id} className="row">
-              <span className="grow small">
-                {o.name} ({describeAmount(o)})
-              </span>
-              <button className="btn secondary compact" onClick={() => choose('remove', o.id)}>
-                Quitar
-              </button>
-              {pending.effect.typeId === SKILL_TYPE_ID && (
-                <button className="btn secondary compact" onClick={() => choose('suspend', o.id)}>
-                  Suspender
-                </button>
-              )}
-            </div>
-          ))}
-          {pending.rest.length > 0 && (
-            <p className="muted small">Faltan {pending.rest.length} stat(s) más por agregar después de este.</p>
-          )}
-          <button className="btn secondary compact" onClick={skipBlocked}>
-            Omitir este stat
+      <div className="actions">
+        <button className="btn" onClick={add}>
+          {editing ? 'Guardar cambios' : 'Agregar efecto'}
+        </button>
+        {editing && (
+          <button className="btn secondary" onClick={cancelEdit}>
+            Cancelar edición
           </button>
-        </div>
-      )}
+        )}
+      </div>
+
+      <h2 className="spaced" ref={raiseTop}>
+        {editingRaise ? 'Editar aumento del límite' : 'Aumento del límite de buffs'}
+      </h2>
+      <p className="muted small">
+        Habilidades, transformaciones, estados o buffs que permiten superar el límite. Cada uno tiene su origen y su duración,
+        y se suma al límite de los 7 stats.
+      </p>
+      {(() => {
+        const original = editingRaise ? effects.find((e) => effectGroup(e) === editingRaise) : undefined
+        return (
+          <LimitRaiseForm
+            key={editingRaise ?? 'nuevo'}
+            types={types}
+            initial={
+              original
+                ? { name: original.name, typeId: original.typeId, flat: original.flat, percent: original.percent, duration: original.duration }
+                : undefined
+            }
+            submitLabel={editingRaise ? 'Guardar aumento' : 'Agregar aumento'}
+            onSubmit={submitRaise}
+            onCancel={editingRaise ? () => setEditingRaise(null) : undefined}
+          />
+        )
+      })()}
+
     </div>
   )
 }

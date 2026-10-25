@@ -1,4 +1,4 @@
-import { EFFECT_TARGETS, STAT_NAMES } from '../rules'
+import { PICKABLE_TARGETS, STAT_NAMES } from '../rules'
 import type { EffectTarget } from '../rules'
 import { TARGET_LABELS } from './format'
 
@@ -16,7 +16,7 @@ export function TargetPicker({ label, prefix, selected, onChange }: Props) {
   const toggle = (target: EffectTarget, on: boolean) =>
     onChange(
       on
-        ? EFFECT_TARGETS.filter((t) => selected.includes(t) || t === target)
+        ? PICKABLE_TARGETS.filter((t) => selected.includes(t) || t === target)
         : selected.filter((t) => t !== target),
     )
 
@@ -32,7 +32,7 @@ export function TargetPicker({ label, prefix, selected, onChange }: Props) {
         </button>
       </div>
       <div className="target-grid">
-        {EFFECT_TARGETS.map((t) => (
+        {PICKABLE_TARGETS.map((t) => (
           <label key={t} className="check">
             <input
               type="checkbox"

@@ -121,6 +121,7 @@ export const TARGET_LABELS: Record<EffectTarget, string> = {
   magia: 'Magia',
   defensaFisica: 'Defensa física',
   defensaMagica: 'Defensa mágica',
+  limite: 'Aumento del límite',
 }
 
 export const DURATION_LABELS: Record<DurationUnit, string> = {
@@ -200,4 +201,13 @@ export const GROUP_LABELS: Record<RankGroup, string> = {
 /** Nombre con su rango entre paréntesis, para distinguir a un mismo monstruo de distinto rango. */
 export function withRank(name: string, rank: string | null | undefined): string {
   return rank ? `${name} (${rank})` : name
+}
+
+import type { EffectState } from '../rules'
+
+export const EFFECT_STATE_LABELS: Record<EffectState, string> = {
+  activo: 'Activo',
+  pisado: 'Pisado',
+  'sin-lugar': 'Sin lugar',
+  suspendido: 'Suspendido',
 }

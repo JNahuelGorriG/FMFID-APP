@@ -1,8 +1,11 @@
 import { STAT_NAMES } from './types'
 import type { StatName } from './types'
 
-/** Lo que puede modificar un buff o debuff: los 7 stats y cuatro derivados. */
-export type EffectTarget = StatName | 'ataque' | 'magia' | 'defensaFisica' | 'defensaMagica'
+/**
+ * Lo que puede modificar un buff o debuff: los 7 stats, cuatro derivados y el límite de los buffs.
+ * Un efecto sobre el límite lo sube (o lo baja) y se elige por separado de los stats.
+ */
+export type EffectTarget = StatName | 'ataque' | 'magia' | 'defensaFisica' | 'defensaMagica' | 'limite'
 
 export const EFFECT_TARGETS: readonly EffectTarget[] = [
   ...STAT_NAMES,
@@ -10,13 +13,20 @@ export const EFFECT_TARGETS: readonly EffectTarget[] = [
   'magia',
   'defensaFisica',
   'defensaMagica',
+  'limite',
 ]
+
+/** Los objetivos que se eligen como stats o derivados (el límite tiene su propio formulario). */
+export const PICKABLE_TARGETS: readonly EffectTarget[] = EFFECT_TARGETS.filter((t) => t !== 'limite')
 
 /** Máximo de buffs (y de debuffs) activos sobre un mismo stat. */
 export const EFFECT_LIMIT = 4
 
 /** Id del tipo "habilidad", que tiene reglas especiales. */
 export const SKILL_TYPE_ID = 'habilidad'
+
+/** Id del tipo "Espíritu": buff de 10 niveles a los 7 stats que no cuenta para el límite de buffs. */
+export const SPIRIT_TYPE_ID = 'espiritu'
 
 export type EffectKind = 'buff' | 'debuff'
 
@@ -48,8 +58,15 @@ export interface Effect {
   combatId: string | null
   /** Para ordenar y desempatar. */
   createdAt: string
-  /** Un efecto desplazado por una habilidad vuelve cuando esta termina. */
+  /** Solo del tipo Espíritu: su nivel (1 a 10). */
+  level?: number
+  /** Obsoleto: antes un efecto desplazado por una habilidad quedaba suspendido. Hoy el límite de 4 se resuelve solo. */
   suspendedForSkill?: boolean
+  /**
+   * Los efectos que se crearon juntos (el mismo buff sobre varios stats) comparten grupo y se ven,
+   * editan y quitan como uno solo. Sin grupo, el efecto es su propio grupo.
+   */
+  group?: string
 }
 
 /** Valor natural de cada objetivo: sobre él se calculan los porcentajes. */
@@ -59,7 +76,11 @@ export function effectAmount(effect: Effect, base: number): number {
   return effect.flat + (base * effect.percent) / 100
 }
 
-export type EffectState = 'activo' | 'pisado' | 'suspendido'
+/**
+ * Activo: cuenta. Pisado: otro del mismo tipo es más fuerte. Sin lugar: ya hay 4 más fuertes o más
+ * recientes sobre ese stat. Suspendido: solo en datos viejos.
+ */
+export type EffectState = 'activo' | 'pisado' | 'sin-lugar' | 'suspendido'
 
 export interface ResolvedEffect {
   effect: Effect
@@ -71,11 +92,14 @@ export interface ResolvedEffect {
  * Decide qué efectos cuentan. Se evalúa por clase (buff o debuff) y por objetivo:
  * 1. De cada tipo gana el más fuerte (en empate, el más nuevo). Los demás quedan "pisados"
  *    y vuelven si el ganador termina.
- * 2. Los efectos desplazados por una habilidad quedan "suspendidos" mientras haya una
- *    habilidad activa sobre ese mismo objetivo.
+ * 2. Sobre un mismo stat caben 4: se quedan los 4 más fuertes (en empate, los más recientes) y el
+ *    resto queda listado como "sin lugar", sin efecto, hasta que se libere un lugar. Así una
+ *    habilidad que entra de más desplaza al más débil solo mientras dure.
  */
 export function resolveEffects(effects: Effect[], bases: EffectBases): ResolvedEffect[] {
   const amounts = new Map(effects.map((e) => [e.id, effectAmount(e, bases[e.target])]))
+  const order = new Map(effects.map((e, i) => [e.id, i]))
+  const amount = (e: Effect) => amounts.get(e.id) ?? 0
   const state = new Map<string, EffectState>()
 
   const groups = new Map<string, Effect[]>()
@@ -90,23 +114,33 @@ export function resolveEffects(effects: Effect[], bases: EffectBases): ResolvedE
       const best = winners.get(e.typeId)
       const wins =
         best === undefined ||
-        (amounts.get(e.id) ?? 0) > (amounts.get(best.id) ?? 0) ||
-        ((amounts.get(e.id) ?? 0) === (amounts.get(best.id) ?? 0) && e.createdAt >= best.createdAt)
+        amount(e) > amount(best) ||
+        (amount(e) === amount(best) && e.createdAt >= best.createdAt)
       if (wins) winners.set(e.typeId, e)
     }
     const winnerIds = new Set([...winners.values()].map((w) => w.id))
     const skillActive = [...winners.values()].some((w) => w.typeId === SKILL_TYPE_ID)
 
+    const live: Effect[] = []
     for (const e of group) {
       if (!winnerIds.has(e.id)) state.set(e.id, 'pisado')
       else if (e.suspendedForSkill && skillActive) state.set(e.id, 'suspendido')
-      else state.set(e.id, 'activo')
+      else live.push(e)
     }
+
+    // Caben EFFECT_LIMIT: los más fuertes y, en empate, los más recientes.
+    const ranked = [...live].sort(
+      (a, b) =>
+        amount(b) - amount(a) ||
+        b.createdAt.localeCompare(a.createdAt) ||
+        (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0),
+    )
+    ranked.forEach((e, i) => state.set(e.id, i < EFFECT_LIMIT ? 'activo' : 'sin-lugar'))
   }
 
   return effects.map((effect) => ({
     effect,
-    amount: amounts.get(effect.id) ?? 0,
+    amount: amount(effect),
     state: state.get(effect.id) ?? 'activo',
   }))
 }
@@ -121,82 +155,69 @@ export function effectTotals(resolved: ResolvedEffect[]): Record<EffectTarget, n
   return totals
 }
 
-export type AddResult =
-  | { status: 'added'; effects: Effect[] }
-  /** Ya hay 4 activos sobre ese objetivo: hay que elegir cuál sacar (o suspender). */
-  | { status: 'limit'; occupants: Effect[] }
-
-/** Efectos de una clase y objetivo que ocupan un lugar (activos). */
-export function activeOccupants(
-  effects: Effect[],
-  kind: EffectKind,
-  target: EffectTarget,
-  bases: EffectBases,
-): Effect[] {
-  return resolveEffects(effects, bases)
-    .filter((r) => r.effect.kind === kind && r.effect.target === target && r.state === 'activo')
-    .map((r) => r.effect)
-}
-
-/** Agrega un efecto, o avisa que hay que elegir cuál reemplazar si superaría el límite. */
-export function addEffect(effects: Effect[], effect: Effect, bases: EffectBases): AddResult {
-  const next = [...effects, effect]
-  const occupants = activeOccupants(next, effect.kind, effect.target, bases)
-  if (occupants.length <= EFFECT_LIMIT) return { status: 'added', effects: next }
-  return { status: 'limit', occupants: occupants.filter((e) => e.id !== effect.id) }
-}
-
-export interface BatchResult {
-  /** Efectos después de agregar los que entraron. */
-  effects: Effect[]
-  /** El primero que no entró porque ya hay 4 activos sobre su stat, con los que quedaron por procesar. */
-  blocked: { effect: Effect; occupants: Effect[]; rest: Effect[] } | null
+/** Lo mismo que `effectTotals`, pero con los buffs y los debuffs por separado (ambos como valores positivos). */
+export function effectTotalsSplit(resolved: ResolvedEffect[]): {
+  buffs: Record<EffectTarget, number>
+  debuffs: Record<EffectTarget, number>
+} {
+  const zero = () => Object.fromEntries(EFFECT_TARGETS.map((t) => [t, 0])) as Record<EffectTarget, number>
+  const buffs = zero()
+  const debuffs = zero()
+  for (const r of resolved) {
+    if (r.state !== 'activo') continue
+    ;(r.effect.kind === 'buff' ? buffs : debuffs)[r.effect.target] += r.amount
+  }
+  return { buffs, debuffs }
 }
 
 /**
- * Agrega varios efectos de una vez (el mismo buff o debuff sobre varios stats). Cada uno cumple las
- * reglas de siempre. Se detiene en el primero que pasaría el límite de 4 y lo devuelve para que el GM
- * elija cuál sale, junto con los que faltan por agregar.
+ * Agrega efectos (por ejemplo, el mismo buff sobre varios stats). Entran todos: si en algún stat ya
+ * hay 4, `resolveEffects` deja activos a los 4 más fuertes y los demás quedan listados sin lugar.
  */
-export function addEffects(effects: Effect[], list: Effect[], bases: EffectBases): BatchResult {
-  let current = effects
-  for (let i = 0; i < list.length; i++) {
-    const result = addEffect(current, list[i], bases)
-    if (result.status === 'added') current = result.effects
-    else return { effects: current, blocked: { effect: list[i], occupants: result.occupants, rest: list.slice(i + 1) } }
-  }
-  return { effects: current, blocked: null }
+export function addEffects(effects: Effect[], list: Effect[]): Effect[] {
+  return [...effects, ...list]
 }
-
-export type LimitChoice = { action: 'remove' | 'suspend'; id: string }
 
 /**
- * Agrega un efecto cuando se superaría el límite, según lo que elija el GM.
- * "Suspender" solo vale para efectos de tipo habilidad: el desplazado vuelve al terminar.
+ * Un efecto termina con la habilidad si es de tipo habilidad o si su duración es "hasta que termine
+ * la habilidad", aunque sea de otro tipo.
  */
-export function addEffectWithChoice(
-  effects: Effect[],
-  effect: Effect,
-  choice: LimitChoice,
-): Effect[] {
-  if (choice.action === 'suspend') {
-    if (effect.typeId !== SKILL_TYPE_ID) {
-      throw new Error('Solo un efecto de tipo habilidad puede suspender a otro.')
-    }
-    return [
-      ...effects.map((e) => (e.id === choice.id ? { ...e, suspendedForSkill: true } : e)),
-      effect,
-    ]
-  }
-  return [...effects.filter((e) => e.id !== choice.id), effect]
+export function isSkillEffect(effect: Pick<Effect, 'typeId' | 'duration'>): boolean {
+  return effect.typeId === SKILL_TYPE_ID || effect.duration.unit === 'habilidad'
 }
 
-/** Quita todos los efectos de tipo habilidad ("terminó la habilidad"). */
+/** Quita todos los efectos que terminan con la habilidad ("terminó la habilidad"). */
 export function endSkill(effects: Effect[]): { effects: Effect[]; removed: Effect[] } {
   return {
-    effects: effects.filter((e) => e.typeId !== SKILL_TYPE_ID),
-    removed: effects.filter((e) => e.typeId === SKILL_TYPE_ID),
+    effects: effects.filter((e) => !isSkillEffect(e)),
+    removed: effects.filter(isSkillEffect),
   }
+}
+
+/** Grupo de un efecto: el que comparte con los creados junto con él, o él mismo. */
+export const effectGroup = (effect: Pick<Effect, 'id' | 'group'>): string => effect.group ?? effect.id
+
+/** Agrupa los efectos por grupo, en el orden en que aparece el primero de cada uno. */
+export function groupEffects<T extends { effect: Effect }>(items: T[]): { group: string; items: T[] }[] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = effectGroup(item.effect)
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  return [...groups.entries()].map(([group, list]) => ({ group, items: list }))
+}
+
+/** Quita todos los efectos de un grupo (el buff entero, en todos sus stats). */
+export function removeGroup(effects: Effect[], group: string): Effect[] {
+  return effects.filter((e) => effectGroup(e) !== group)
+}
+
+/** Reemplaza un grupo por una versión nueva (por ejemplo, cuando la habilidad sube de nivel). */
+export function replaceGroup(effects: Effect[], group: string, list: Effect[]): Effect[] {
+  return addEffects(
+    removeGroup(effects, group),
+    list.map((e) => ({ ...e, group })),
+  )
 }
 
 export interface EffectType {
@@ -214,4 +235,5 @@ export const DEFAULT_EFFECT_TYPES: EffectType[] = [
   { id: 'transformacion', name: 'Aumento por transformación' },
   { id: 'estilo', name: 'Aumento por estilo' },
   { id: 'estado', name: 'Aumento por estado' },
+  { id: SPIRIT_TYPE_ID, name: 'Espíritu' },
 ]
