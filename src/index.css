@@ -3,6 +3,11 @@
   --bg: #130f10;
   --card: #1d1517;
   --line: #3a2a2e;
+  /* secciones que alternan: rojo oscuro y violeta oscuro */
+  --section-a: #2a1519;
+  --section-a-line: #5b2530;
+  --section-b: #1f1730;
+  --section-b-line: #45345f;
   --accent: #ef4444;
   --accent-soft: #fca5a5;
   --text: #f5eceb;
@@ -256,3 +261,29 @@ details[open] > summary { margin-bottom: 8px; }
 .effect-row { flex-wrap: wrap; }
 
 .cap-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+
+/* Secciones retraíbles: alternan entre rojo oscuro y violeta oscuro */
+details.section { background: var(--section-a); border-color: var(--section-a-line); }
+details.section:nth-of-type(even) { background: var(--section-b); border-color: var(--section-b-line); }
+details.section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  margin: 0;
+}
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary h2 { margin: 0; }
+details.section > summary::after { content: '▾'; color: var(--accent-soft); font-size: 1.1rem; }
+details.section:not([open]) > summary::after { content: '▸'; }
+details.section[open] > summary { margin-bottom: 8px; }
+/* una sección dentro de otra no alterna: va más oscura */
+details.section details.section { background: rgba(0, 0, 0, 0.22); border-color: var(--line); margin-top: 10px; }
+details.section details.section:nth-of-type(even) { background: rgba(0, 0, 0, 0.22); border-color: var(--line); }
+.collapse-all { display: flex; gap: 8px; margin: 0 0 10px; }
+
+.report-preview { margin: 0; padding: 10px; overflow-x: auto; background: rgba(0,0,0,0.3); border-radius: 10px; font-size: 0.75rem; line-height: 1.35; white-space: pre; }
+
+.seg { flex-wrap: wrap; }

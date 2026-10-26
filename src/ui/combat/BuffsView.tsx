@@ -25,9 +25,9 @@ import {
   describeDuration,
   fmt,
 } from '../format'
-import { PickParticipants } from './PickParticipants'
 import { LimitRaiseForm } from '../LimitRaiseForm'
 import { TargetPicker } from '../TargetPicker'
+import { Section } from '../Section'
 
 const DURATION_OPTIONS = (Object.keys(DURATION_LABELS) as DurationUnit[]).map((u) => ({
   value: u,
@@ -38,13 +38,24 @@ const LEVEL_OPTIONS = Array.from({ length: SPIRIT_MAX_LEVEL + 1 }, (_, n) => ({
   label: n === 0 ? '0 (quitar)' : String(n),
 }))
 
-type Mode = 'manual' | 'espiritu' | 'limite'
+export type BuffMode = 'manual' | 'espiritu' | 'limite'
 
-/** Aplica buffs, debuffs y Espíritu a varios combatientes a la vez, y muestra lo que tiene cada uno. */
-export function BuffsView({ combat, profiles }: { combat: Combat; profiles: Profile[] }) {
+/**
+ * Aplica buffs, debuffs, Espíritu y aumentos del límite a los combatientes elegidos, y muestra lo que tiene
+ * cada uno. Los combatientes y el modo los elige la pantalla de Efectos.
+ */
+export function BuffsView({
+  combat,
+  profiles,
+  mode,
+  selected,
+}: {
+  combat: Combat
+  profiles: Profile[]
+  mode: BuffMode
+  selected: Set<string>
+}) {
   const types = useLiveQuery(() => settingsRepo.getEffectTypes(), [])
-  const [selected, setSelected] = useState<Set<string>>(() => new Set())
-  const [mode, setMode] = useState<Mode>('manual')
   const [kind, setKind] = useState<EffectKind>('buff')
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState('')
@@ -55,7 +66,10 @@ export function BuffsView({ combat, profiles }: { combat: Combat; profiles: Prof
   const [remaining, setRemaining] = useState(3)
   const [level, setLevel] = useState(1)
   const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  // El aviso se esconde solo si cambia la cantidad de elegidos (ya no es el mismo problema).
+  const [errorState, setErrorState] = useState<{ message: string; size: number } | null>(null)
+  const error = errorState && errorState.size === selected.size ? errorState.message : ''
+  const setError = (message: string) => setErrorState(message ? { message, size: selected.size } : null)
 
   if (types === undefined) return <p className="muted">Cargando…</p>
   if (profiles.length === 0) return <p className="muted small">Agrega participantes para aplicarles buffs.</p>
@@ -136,42 +150,16 @@ export function BuffsView({ combat, profiles }: { combat: Combat; profiles: Prof
 
   return (
     <>
-      <PickParticipants
-        title="A quiénes"
-        profiles={profiles}
-        selected={selected}
-        onChange={(next) => {
-          setSelected(next)
-          setError('')
-        }}
-      />
-
-      <div className="seg" role="group" aria-label="Qué aplicar">
-        {(
-          [
-            ['manual', 'Buff o debuff'],
-            ['espiritu', 'Espíritu'],
-            ['limite', 'Aumento del límite'],
-          ] as const
-        ).map(([id, label]) => (
-          <button key={id} className={id === mode ? 'tab active' : 'tab'} onClick={() => setMode(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-
       {mode === 'limite' ? (
-        <div className="card">
-          <h2>Aumento del límite a varios</h2>
+        <Section title="Aumento del límite a varios">
           <p className="muted small">
             Para habilidades, transformaciones, estados o buffs que permiten superar el límite de los buffs. Es aparte del
             Espíritu. Se elige el origen, cuánto sube y cuánto dura.
           </p>
           <LimitRaiseForm types={types} submitLabel={`Aplicar a ${chosen.length} combatiente(s)`} onSubmit={(f) => void applyRaise(f)} />
-        </div>
+        </Section>
       ) : mode === 'manual' ? (
-        <div className="card">
-          <h2>Buff o debuff a varios</h2>
+        <Section title="Buff o debuff a varios">
           <div className="grid-2">
             <SelectField
               label="Clase"
@@ -203,10 +191,9 @@ export function BuffsView({ combat, profiles }: { combat: Combat; profiles: Prof
           <button className="btn" onClick={() => void applyManual()}>
             Aplicar a {chosen.length} combatiente(s)
           </button>
-        </div>
+        </Section>
       ) : (
-        <div className="card">
-          <h2>Espíritu</h2>
+        <Section title="Espíritu">
           <p className="muted small">
             Buff de 10 niveles a los 7 stats: cada nivel suma el 10 % del límite del rango de cada uno. Dura hasta que lo
             quites (nivel 0) y no cuenta para el límite de buffs.
@@ -227,7 +214,7 @@ export function BuffsView({ combat, profiles }: { combat: Combat; profiles: Prof
           <button className="btn" onClick={() => void applySpirit()}>
             {level === 0 ? 'Quitar' : 'Aplicar'} Espíritu a {chosen.length} combatiente(s)
           </button>
-        </div>
+        </Section>
       )}
 
       {error && (

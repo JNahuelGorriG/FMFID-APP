@@ -28,6 +28,7 @@ import { NumberField, SelectField, TextField } from './fields'
 import { LimitRaiseForm } from './LimitRaiseForm'
 import { TargetPicker } from './TargetPicker'
 import { DURATION_LABELS, EFFECT_STATE_LABELS, TARGET_LABELS, describeAmount, describeDuration } from './format'
+import { Section } from './Section'
 
 interface Props {
   effects: Effect[]
@@ -70,8 +71,8 @@ export function EffectsPanel({
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [editingRaise, setEditingRaise] = useState<string | null>(null)
-  const formTop = useRef<HTMLHeadingElement>(null)
-  const raiseTop = useRef<HTMLHeadingElement>(null)
+  const formTop = useRef<HTMLDetailsElement>(null)
+  const raiseTop = useRef<HTMLDetailsElement>(null)
   const [techKey, setTechKey] = useState<keyof Techniques>('kyushu')
   const [techTargets, setTechTargets] = useState<EffectTarget[] | null>(null)
   const [techType, setTechType] = useState(SKILL_TYPE_ID)
@@ -120,6 +121,7 @@ export function EffectsPanel({
     if (!first) return
     if (first.target === 'limite') {
       setEditingRaise(group)
+      if (raiseTop.current) raiseTop.current.open = true
       requestAnimationFrame(() => raiseTop.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
       return
     }
@@ -134,6 +136,7 @@ export function EffectsPanel({
     setRemaining(Math.max(1, first.duration.remaining || 3))
     setError('')
     // El formulario está más abajo: se lleva a la vista para no perder tiempo buscándolo.
+    if (formTop.current) formTop.current.open = true
     requestAnimationFrame(() => formTop.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }))
   }
 
@@ -188,8 +191,7 @@ export function EffectsPanel({
   }
 
   return (
-    <div className="card">
-      <h2>Buffs y debuffs</h2>
+    <Section title="Buffs y debuffs">
 
       {resolved.length === 0 && <p className="muted small">Sin efectos.</p>}
       <ul className="history">
@@ -242,8 +244,7 @@ export function EffectsPanel({
       )}
 
       {techniques && (
-        <>
-          <h2 className="spaced">Potenciaciones</h2>
+        <Section nested title="Potenciaciones">
           <div className="grid-2">
             <SelectField
               label="Potenciación"
@@ -277,12 +278,10 @@ export function EffectsPanel({
           <button className="btn" onClick={applyTechnique}>
             Aplicar potenciación
           </button>
-        </>
+        </Section>
       )}
 
-      <h2 className="spaced" ref={formTop}>
-        {editing ? 'Editar buff o debuff' : 'Agregar a mano'}
-      </h2>
+      <Section nested ref={formTop} storageKey="Agregar a mano" title={editing ? 'Editar buff o debuff' : 'Agregar a mano'}>
       {editing && (
         <p className="muted small">
           Estás editando el buff completo (todos sus stats). Al guardar, reemplaza al anterior.
@@ -332,9 +331,14 @@ export function EffectsPanel({
         )}
       </div>
 
-      <h2 className="spaced" ref={raiseTop}>
-        {editingRaise ? 'Editar aumento del límite' : 'Aumento del límite de buffs'}
-      </h2>
+      </Section>
+
+      <Section
+        nested
+        ref={raiseTop}
+        storageKey="Aumento del límite de buffs"
+        title={editingRaise ? 'Editar aumento del límite' : 'Aumento del límite de buffs'}
+      >
       <p className="muted small">
         Habilidades, transformaciones, estados o buffs que permiten superar el límite. Cada uno tiene su origen y su duración,
         y se suma al límite de los 7 stats.
@@ -356,7 +360,7 @@ export function EffectsPanel({
           />
         )
       })()}
-
-    </div>
+      </Section>
+    </Section>
   )
 }

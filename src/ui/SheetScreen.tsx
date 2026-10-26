@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { STAT_NAMES, characterSheet, splitEnergy } from '../rules'
 import { repo } from './data'
 import { STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue } from './format'
+import { CollapseAll, Section } from './Section'
 
 interface Props {
   id: string
@@ -38,6 +39,7 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
           Editar
         </button>
       </header>
+      <CollapseAll />
 
       <div className="card stats" aria-label="Stats">
         {STAT_NAMES.map((name) => (
@@ -87,8 +89,7 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
         </div>
       </div>
 
-      <details className="card">
-        <summary>Stats derivados</summary>
+      <Section title="Stats derivados" defaultOpen={false}>
         <dl className="derived">
           <dt>Promedio de stats</dt>
           <dd>{fmt(sheet.average)}</dd>
@@ -111,10 +112,9 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
           <dt>Alcance mágico</dt>
           <dd>{fmt(d.magicReach)}</dd>
         </dl>
-      </details>
+      </Section>
 
-      <details className="card">
-        <summary>Potenciaciones</summary>
+      <Section title="Potenciaciones" defaultOpen={false}>
         <dl className="derived">
           <dt>Ki</dt>
           <dd>{d.techniques.ki}</dd>
@@ -137,10 +137,9 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
           <dt>Reiatsu</dt>
           <dd>{d.techniques.reiatsu}</dd>
         </dl>
-      </details>
+      </Section>
     
-      <details className="card">
-        <summary>Historial de cambios ({history?.length ?? 0})</summary>
+      <Section title={`Historial de cambios (${history?.length ?? 0})`} defaultOpen={false}>
         {history && history.length === 0 && <p className="muted small">Todavía no hay cambios.</p>}
         <ul className="history">
           {(history ?? []).map((h) => (
@@ -153,7 +152,7 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
             </li>
           ))}
         </ul>
-      </details>
+      </Section>
     </section>
   )
 }

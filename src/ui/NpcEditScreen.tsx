@@ -11,6 +11,7 @@ import type { ArmorType, EnemyProfile, Npc, NpcKind, StatName, Tier, WeaponSize 
 import { CheckField, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from './fields'
 import { npcRepo } from './data'
 import { STAT_LABELS, fmt } from './format'
+import { Section } from './Section'
 
 interface Props {
   id: string
@@ -76,8 +77,7 @@ function NpcForm({
     <section>
       <h1>Editar NPC</h1>
 
-      <div className="card">
-        <h2>Datos</h2>
+      <Section title="Datos">
         <TextField label="Nombre" value={draft.name} onChange={(v) => set('name', v)} />
         <SelectField
           label="Tipo"
@@ -100,16 +100,15 @@ function NpcForm({
         </div>
         <TextAreaField label="Personalidad" value={draft.personality} onChange={(v) => set('personality', v)} />
         <TextAreaField label="Detalles" value={draft.details} onChange={(v) => set('details', v)} />
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Perfil de combate</h2>
+      <Section title="Perfil de combate">
         <CheckField
           label="Tiene perfil de combate"
           checked={draft.combat !== null}
           onChange={(on) => set('combat', on ? defaultEnemyProfile(suggestedCombatRank(draft)) : null)}
         />
-      </div>
+      </Section>
 
       {draft.combat && preview && (
         <>
@@ -129,8 +128,7 @@ function NpcForm({
             ))}
           </div>
 
-          <div className="card">
-            <h2>Equipo de referencia</h2>
+          <Section title="Equipo de referencia">
             <div className="grid-2">
               <SelectField label="Arma de daño físico" value={draft.combat.physWeapon} options={WEAPON_OPTIONS} onChange={(v) => setCombat({ physWeapon: v })} />
               <SelectField label="Arma de daño mágico" value={draft.combat.magicWeapon} options={WEAPON_OPTIONS} onChange={(v) => setCombat({ magicWeapon: v })} />
@@ -138,15 +136,14 @@ function NpcForm({
               <SelectField label="Armadura mágica SA" value={draft.combat.magicArmor} options={ARMOR_OPTIONS} onChange={(v) => setCombat({ magicArmor: v })} />
             </div>
             <p className="muted small">El equipo de un enemigo es de un rango por debajo del suyo.</p>
-          </div>
+          </Section>
 
-          <div className="card">
-            <h2>Vida (puntos)</h2>
+          <Section title="Vida (puntos)">
             <div className="grid-2">
               <NumberField label="Vida actual" integer value={draft.combat.hp.current} onChange={(v) => setCombat({ hp: { ...(draft.combat as EnemyProfile).hp, current: v } })} />
               <NumberField label="Vida máxima" integer value={draft.combat.hp.max} onChange={(v) => setCombat({ hp: { ...(draft.combat as EnemyProfile).hp, max: v } })} />
             </div>
-          </div>
+          </Section>
 
           <p className="muted small">
             Vista previa: maná {fmt(preview.mana)} · estamina {fmt(preview.stamina)} · daño físico{' '}

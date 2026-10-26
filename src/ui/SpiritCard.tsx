@@ -1,6 +1,7 @@
 import { SPIRIT_MAX_LEVEL, spiritPerLevel } from '../rules'
 import type { RankGroup } from '../rules'
 import { GROUP_LABELS, fmt } from './format'
+import { Section } from './Section'
 
 interface Props {
   level: number
@@ -13,8 +14,7 @@ interface Props {
 export function SpiritCard({ level, group, onAdjust }: Props) {
   const perLevel = spiritPerLevel(group)
   return (
-    <div className="card" aria-label="Espíritu">
-      <h2>Espíritu</h2>
+    <Section title="Espíritu" aria-label="Espíritu">
       <div className="stepper">
         <span className="small muted">Nivel de Espíritu</span>
         <div className="stepper-row">
@@ -38,6 +38,6 @@ export function SpiritCard({ level, group, onAdjust }: Props) {
         Dura hasta que lo quites (nivel 0). No cuenta para el límite de los buffs ni lo aumenta, pero ocupa un lugar
         de los 4 por stat con su propio tipo.
       </p>
-    </div>
+    </Section>
   )
 }

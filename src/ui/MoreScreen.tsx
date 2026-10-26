@@ -7,6 +7,8 @@ import type { EffectType, TechniqueTarget, Techniques } from '../rules'
 import { settingsRepo } from './data'
 import { SelectField, TextField } from './fields'
 import { TARGET_LABELS } from './format'
+import { CollapseAll, Section } from './Section'
+import { StatsExport } from './StatsExport'
 
 function EffectTypesEditor() {
   const saved = useLiveQuery(() => settingsRepo.getEffectTypes(), [])
@@ -31,8 +33,7 @@ function EffectTypesEditor() {
   }
 
   return (
-    <div className="card">
-      <h2>Tipos de buff</h2>
+    <Section title="Tipos de buff">
       <p className="muted small">
         Se usan en buffs y debuffs. Los tipos Habilidad y Espíritu tienen reglas especiales y no se pueden quitar.
       </p>
@@ -72,7 +73,7 @@ function EffectTypesEditor() {
           {status}
         </p>
       )}
-    </div>
+    </Section>
   )
 }
 
@@ -90,8 +91,7 @@ function TechniqueTargetsEditor() {
   if (!targets) return null
 
   return (
-    <div className="card">
-      <h2>Potenciaciones: a qué suman</h2>
+    <Section title="Potenciaciones: a qué suman">
       <p className="muted small">
         Un mismo poder puede servir para cosas distintas: por defecto se pregunta a qué stat suma en
         cada uso. Si una potenciación casi siempre va al mismo, puedes dejarlo preelegido acá.
@@ -123,7 +123,7 @@ function TechniqueTargetsEditor() {
           {status}
         </p>
       )}
-    </div>
+    </Section>
   )
 }
 
@@ -174,19 +174,20 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
   return (
     <section>
       <h1>Más</h1>
+      <CollapseAll />
 
-      <div className="card">
-        <h2>Tablas de la mesa</h2>
+      <Section title="Tablas de la mesa">
         <p className="muted small">
           Éxitos, daños, rangos, equipo, entrenamiento, precios y la comparativa entre jugadores.
         </p>
         <button className="btn" onClick={onOpenTables}>
           Ver tablas
         </button>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Respaldo</h2>
+      <StatsExport />
+
+      <Section title="Respaldo">
         <p className="muted small">
           Los datos viven solo en este dispositivo. Exporta un respaldo de vez en cuando.
           "Actualizar desde el Excel" carga el archivo que genera el importador sin borrar tus combates.
@@ -218,7 +219,7 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
             {message}
           </p>
         )}
-      </div>
+      </Section>
       <EffectTypesEditor />
       <TechniqueTargetsEditor />
     </section>

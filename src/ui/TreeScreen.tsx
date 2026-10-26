@@ -17,6 +17,7 @@ import type { BranchId, Character, Choice, NodeDef, NodeState } from '../rules'
 import { repo } from './data'
 import { NumberField, SelectField, TextAreaField, TextField } from './fields'
 import { STAT_LABELS, fmt } from './format'
+import { CollapseAll, Section } from './Section'
 
 const BRANCH_LABELS: Record<BranchId, string> = { ...STAT_LABELS, heroe: 'Héroe', categoria: 'Categoría' }
 
@@ -135,9 +136,9 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
         </button>
         <h1 className="tight grow">Árbol de {character.name}</h1>
       </header>
+      <CollapseAll />
 
-      <div className="card">
-        <h2>Saldo</h2>
+      <Section title="Saldo">
         <div className="grid-2">
           <NumberField label="BP disponibles" value={bp} onChange={setBp} />
           <NumberField label="MH disponibles" value={mh} onChange={setMh} />
@@ -148,10 +149,9 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
         <p className="muted small">
           Gastados en total: {fmt(totals.bp)} BP en {tree.purchases.length} compras.
         </p>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Compuertas</h2>
+      <Section title="Compuertas">
         {([2, 3] as const).map((stage) => {
           const key = stage === 2 ? 'stage2' : 'stage3'
           const doneRamas = branchesWithStagesDone(tree, (stage - 1) as 1 | 2).length
@@ -171,7 +171,7 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
             </div>
           )
         })}
-      </div>
+      </Section>
 
       <nav className="tabs" aria-label="Ramas">
         {BRANCHES.map((b) => (
@@ -220,8 +220,7 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
         Deshacer la última compra de {BRANCH_LABELS[branch]}
       </button>
 
-      <div className="card spaced">
-        <h2>Dotes</h2>
+      <Section title="Dotes" className="spaced">
         {dotes.length === 0 && <p className="muted small">Todavía no hay dotes.</p>}
         {dotes.map((d, i) => (
           <div key={d.id} className="ref">
@@ -243,10 +242,9 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
             Guardar dotes
           </button>
         )}
-      </div>
+      </Section>
 
-      <details className="card">
-        <summary>Diferencias con las compras ({diffs.length})</summary>
+      <Section title={`Diferencias con las compras (${diffs.length})`} defaultOpen={false}>
         {tree.purchases.length === 0 ? (
           <p className="muted small">Sin compras cargadas: no hay nada que comparar.</p>
         ) : diffs.length === 0 ? (
@@ -272,7 +270,7 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
             ))}
           </>
         )}
-      </details>
+      </Section>
     </section>
   )
 }

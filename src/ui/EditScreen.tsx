@@ -29,6 +29,7 @@ import {
   TIER_LABELS,
   fmt,
 } from './format'
+import { Section } from './Section'
 
 interface Props {
   id: string
@@ -117,16 +118,14 @@ function EditForm({
         </p>
       )}
 
-      <div className="card">
-        <h2>Datos</h2>
+      <Section title="Datos">
         <TextField label="Nombre" value={draft.name} onChange={(v) => set('name', v)} />
         <TextField label="Jugador" value={draft.playerName} onChange={(v) => set('playerName', v)} />
         <TextField label="Clase" value={draft.className} onChange={(v) => set('className', v)} />
         <CheckField label="Retirado" checked={draft.retired} onChange={(v) => set('retired', v)} />
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Súper stats</h2>
+      <Section title="Súper stats">
         <p className="muted small">
           Para personajes con un stat potenciado y otro reducido (Edward, Hernán): el súper primario recibe el 125 %
           de Categoría y el súper terciario el 25 %.
@@ -145,15 +144,14 @@ function EditForm({
             onChange={(v) => setSuper('terciario', v)}
           />
         </div>
-      </div>
+      </Section>
 
       <h2>Stats</h2>
       {STAT_NAMES.map((name) => (
         <StatEditor key={name} name={name} draft={draft} set={set} />
       ))}
 
-      <div className="card">
-        <h2>Energía y vida</h2>
+      <Section title="Energía y vida">
         <div className="grid-2">
           {(['baseMana', 'baseStamina', 'bonusMana', 'bonusStamina'] as const).map((key) => (
             <NumberField
@@ -175,12 +173,11 @@ function EditForm({
             />
           ))}
         </div>
-      </div>
+      </Section>
 
       <DerivedEditor draft={draft} set={set} rank={sheet?.rank ?? null} />
 
-      <div className="card">
-        <h2>Guardar</h2>
+      <Section title="Guardar">
         <TextField
           label="Motivo del cambio"
           value={reason}
@@ -205,7 +202,7 @@ function EditForm({
             Cancelar
           </button>
         </div>
-      </div>
+      </Section>
 
       <button className="btn danger" onClick={() => void remove()}>
         Eliminar personaje
@@ -361,8 +358,7 @@ function DerivedEditor({
   const weights = d.magicDefenseWeights ?? { constitucion: 0.3, sabiduria: 0.7 }
 
   return (
-    <details className="card">
-      <summary>Equipo de referencia</summary>
+    <Section title="Equipo de referencia" defaultOpen={false}>
       <p className="muted small">
         El ajuste de rango es en pasos: +1 sube un rango (de A a A+), −1 baja uno.
       </p>
@@ -393,6 +389,6 @@ function DerivedEditor({
         ]}
         onChange={(v) => set('derived.agilityStat', v)}
       />
-    </details>
+    </Section>
   )
 }

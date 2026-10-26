@@ -48,6 +48,7 @@ import { StatCapsCard } from './StatCapsCard'
 import { WeaponCard } from './WeaponCard'
 import { NumberField, SelectField, Stepper } from './fields'
 import { STAT_LABELS, describeDuration, fmt, woundsText } from './format'
+import { CollapseAll, Section } from './Section'
 
 interface Props {
   combatId: string
@@ -90,6 +91,7 @@ export function ParticipantScreen({ combatId, participantId, onBack }: Props) {
         </button>
         <h1 className="tight grow">{participant.name}</h1>
       </header>
+      <CollapseAll />
 
       {participant.pc ? (
         character ? (
@@ -179,8 +181,7 @@ function raisesOf(resolved: ResolvedEffect[], types: EffectType[]) {
 function ChangedValues({ rows }: { rows: [string, number, number][] }) {
   if (rows.length === 0) return null
   return (
-    <div className="card">
-      <h2>Valores con efectos</h2>
+    <Section title="Valores con efectos">
       <dl className="derived">
         {rows.map(([label, natural, current]) => (
           <div key={label} className="kv-between">
@@ -192,7 +193,7 @@ function ChangedValues({ rows }: { rows: [string, number, number][] }) {
           </div>
         ))}
       </dl>
-    </div>
+    </Section>
   )
 }
 
@@ -320,8 +321,7 @@ function PcPanel({
 
   return (
     <>
-      <div className="card">
-        <h2>Vida</h2>
+      <Section title="Vida">
         <div className="grid-3">
           {(['leve', 'medio', 'letal'] as const).map((key) => (
             <Stepper
@@ -338,10 +338,9 @@ function PcPanel({
         ) : (
           state.health.letal === 0 && <p className="errors">Sin heridas letales: estado crítico.</p>
         )}
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Curación</h2>
+      <Section title="Curación">
         <p className="muted small">Pociones y curación por energía. Cada nivel ofrece 1 a 3 formas de usar la misma curación.</p>
         <SelectField
           label="Nivel de curación"
@@ -386,7 +385,7 @@ function PcPanel({
         <button className="btn" onClick={() => void applyHeal()}>
           Aplicar curación
         </button>
-      </div>
+      </Section>
 
       <SaturationCard
         value={saturation}
@@ -394,8 +393,7 @@ function PcPanel({
         onAdd={(d) => void update((s) => ({ ...s, saturation: clampSaturation((s.saturation ?? 0) + d) }))}
       />
 
-      <div className="card">
-        <h2>Armadura</h2>
+      <Section title="Armadura">
         {state.armor ? (
           <>
             <p className="result" role="status">
@@ -487,7 +485,7 @@ function PcPanel({
             </button>
           </>
         )}
-      </div>
+      </Section>
 
       <WeaponCard
         weapon={state.weapon ?? null}
@@ -495,8 +493,7 @@ function PcPanel({
         onChange={(change) => void update((s) => ({ ...s, weapon: change(s.weapon ?? null) }))}
       />
 
-      <div className="card">
-        <h2>Barreras</h2>
+      <Section title="Barreras">
         {state.barriers.length === 0 && <p className="muted small">Sin barreras.</p>}
         <ul className="history">
           {state.barriers.map((b, i) => (
@@ -551,10 +548,9 @@ function PcPanel({
         <button className="btn secondary" onClick={addBarrier}>
           Agregar barrera
         </button>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Energías</h2>
+      <Section title="Energías">
         <div className="grid-2">
           {(['natural', 'renovable'] as const).map((pool) => (
             <NumberField
@@ -573,10 +569,9 @@ function PcPanel({
             />
           ))}
         </div>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Salvaciones</h2>
+      <Section title="Salvaciones">
         <div className="grid-2">
           <Stepper
             label="Salvaciones"
@@ -617,7 +612,7 @@ function PcPanel({
             {message}
           </p>
         )}
-      </div>
+      </Section>
 
       <SpiritCard
         level={spiritLevel(state.effects)}
@@ -724,8 +719,7 @@ function NpcPanel({
 
   return (
     <>
-      <div className="card">
-        <h2>Vida</h2>
+      <Section title="Vida">
         <div className="grid-2">
           <Stepper
             label="Vida actual"
@@ -743,7 +737,7 @@ function NpcPanel({
           />
         </div>
         {npc.hpCurrent === 0 && <p className="errors">Sin vida.</p>}
-      </div>
+      </Section>
 
       <SaturationCard
         value={npc.saturation ?? 0}
@@ -757,8 +751,7 @@ function NpcPanel({
         onChange={(change) => void update((n) => ({ ...n, weapon: change(n.weapon ?? null) }))}
       />
 
-      <div className="card">
-        <h2>Barreras (puntos)</h2>
+      <Section title="Barreras (puntos)">
         {npc.barriers.length === 0 && <p className="muted small">Sin barreras.</p>}
         <ul className="history">
           {npc.barriers.map((b, i) => (
@@ -804,7 +797,7 @@ function NpcPanel({
             {message}
           </p>
         )}
-      </div>
+      </Section>
 
       <div className="card stats" aria-label="Stats del NPC en combate">
         {STAT_NAMES.map((s) => (

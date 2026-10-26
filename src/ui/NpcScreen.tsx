@@ -3,6 +3,7 @@ import { STAT_NAMES, defaultEnemyProfile, enemySheet, suggestedCombatRank } from
 import type { Npc } from '../rules'
 import { npcRepo } from './data'
 import { STAT_LABELS, fmt } from './format'
+import { Section } from './Section'
 
 interface Props {
   id: string
@@ -90,8 +91,7 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
             </div>
           </div>
 
-          <details className="card">
-            <summary>Daño y defensas</summary>
+          <Section title="Daño y defensas" defaultOpen={false}>
             <dl className="derived">
               <dt>Daño físico con arma</dt>
               <dd>{fmt(sheet.physDamageWithWeapon)}</dd>
@@ -112,10 +112,9 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
               <dt>Alcance mágico</dt>
               <dd>{fmt(sheet.magicReach)}</dd>
             </dl>
-          </details>
+          </Section>
 
-          <details className="card">
-            <summary>Potenciaciones</summary>
+          <Section title="Potenciaciones" defaultOpen={false}>
             <dl className="derived">
               <dt>Ki</dt>
               <dd>{sheet.techniques.ki}</dd>
@@ -138,7 +137,7 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
               <dt>Reiatsu</dt>
               <dd>{sheet.techniques.reiatsu}</dd>
             </dl>
-          </details>
+          </Section>
         </>
       ) : (
         <div className="card">

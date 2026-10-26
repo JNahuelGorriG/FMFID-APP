@@ -4,6 +4,7 @@ import type { Profile, StatName } from '../../rules'
 import { OptionalNumberField, SelectField } from '../fields'
 import { LEVEL_LABELS, OUTCOME_LABELS, SIDE_LABELS, STAT_LABELS, fmt, rangeText, withRank } from '../format'
 import { PickParticipants } from './PickParticipants'
+import { Section } from '../Section'
 
 const STAT_OPTIONS = STAT_NAMES.map((s) => ({ value: s, label: STAT_LABELS[s] }))
 
@@ -28,8 +29,7 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
 
   return (
     <>
-      <div className="card">
-        <h2>Quién tira</h2>
+      <Section title="Quién tira">
         <SelectField
           label="Combatiente"
           value={source.participantId}
@@ -66,7 +66,7 @@ export function ChecksView({ profiles }: { profiles: Profile[] }) {
           onChange={setRoller}
         />
         <OptionalNumberField label="Tirada (d20, opcional)" value={d20} onChange={setD20} />
-      </div>
+      </Section>
 
       <PickParticipants
         title="Contra quiénes"

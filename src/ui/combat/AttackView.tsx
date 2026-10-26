@@ -35,6 +35,7 @@ import {
   withRank,
   woundsText,
 } from '../format'
+import { Section } from '../Section'
 
 const STAT_OPTIONS = STAT_NAMES.map((s) => ({ value: s, label: STAT_LABELS[s] }))
 const TYPE_OPTIONS: { value: AttackType; label: string }[] = [
@@ -208,8 +209,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
 
   return (
     <>
-      <div className="card">
-        <h2>Quién ataca a quién</h2>
+      <Section title="Quién ataca a quién">
         <div className="grid-2">
           <SelectField
             label="Atacante"
@@ -249,10 +249,9 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           <SelectField label="Stat del atacante" value={attackerStat} options={STAT_OPTIONS} onChange={setAttackerStat} />
           <SelectField label="Stat del defensor" value={defenderStat} options={STAT_OPTIONS} onChange={setDefenderStat} />
         </div>
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>Impacto</h2>
+      <Section title="Impacto">
         <p className="small">
           {attacker.name} {STAT_LABELS[attackerStat]} <strong>{fmt(check.attackerValue)}</strong> contra{' '}
           {defender.name} {STAT_LABELS[defenderStat]} <strong>{fmt(check.defenderValue)}</strong>
@@ -310,10 +309,9 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
             Registrar fallo
           </button>
         )}
-      </div>
+      </Section>
 
-      <div className="card" aria-label="Daño contra defensa">
-        <h2>Daño contra defensa</h2>
+      <Section title="Daño contra defensa" aria-label="Daño contra defensa">
         <p className="muted small">
           Por defecto se enfrenta el daño {type === 'fisico' ? 'físico' : 'mágico'} contra la defensa {type === 'fisico' ? 'física' : 'mágica'}. La escala es la de{' '}
           {defender.name} ({defender.rankName ?? 'sin rango'}, grupo {GROUP_LABELS[defender.group]}).
@@ -487,7 +485,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
             Para aplicar el daño falta el resultado del impacto (o marcar "Aplicar el daño sin depender de la tirada").
           </p>
         )}
-      </div>
+      </Section>
 
       {lastResult && (
         <p className="result" role="status" aria-label="Resultado del último ataque">

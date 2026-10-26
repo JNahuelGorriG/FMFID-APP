@@ -4,11 +4,12 @@ import { orderedParticipants } from '../rules'
 import { combatRepo } from './data'
 import { AddView } from './combat/AddView'
 import { AttackView } from './combat/AttackView'
-import { BuffsView } from './combat/BuffsView'
+import { EfectosView } from './combat/EfectosView'
 import { ChecksView } from './combat/ChecksView'
 import { CompareView } from './combat/CompareView'
 import { TurnsView } from './combat/TurnsView'
 import { useProfiles } from './useProfiles'
+import { CollapseAll } from './Section'
 
 interface Props {
   id: string
@@ -17,12 +18,12 @@ interface Props {
   onDeleted: () => void
 }
 
-type Section = 'turnos' | 'ataque' | 'buffs' | 'comparar' | 'checks' | 'agregar'
+type Section = 'turnos' | 'ataque' | 'efectos' | 'comparar' | 'checks' | 'agregar'
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'turnos', label: 'Turnos' },
   { id: 'ataque', label: 'Ataque' },
-  { id: 'buffs', label: 'Buffs' },
+  { id: 'efectos', label: 'Efectos' },
   { id: 'comparar', label: 'Comparar' },
   { id: 'checks', label: 'Checks' },
   { id: 'agregar', label: 'Agregar' },
@@ -64,6 +65,7 @@ export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props
           </button>
         ))}
       </nav>
+      <CollapseAll />
 
       {section === 'turnos' && (
         <TurnsView
@@ -75,7 +77,7 @@ export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props
         />
       )}
       {section === 'ataque' && <AttackView combat={combat} profiles={profiles} />}
-      {section === 'buffs' && <BuffsView combat={combat} profiles={profiles} />}
+      {section === 'efectos' && <EfectosView combat={combat} profiles={profiles} />}
       {section === 'comparar' && <CompareView profiles={profiles} />}
       {section === 'checks' && <ChecksView profiles={profiles} />}
       {section === 'agregar' && <AddView combat={combat} />}

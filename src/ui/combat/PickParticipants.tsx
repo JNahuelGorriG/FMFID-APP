@@ -1,5 +1,6 @@
 import type { Profile, Side } from '../../rules'
 import { SIDE_LABELS } from '../format'
+import { Section } from '../Section'
 
 interface Props {
   title: string
@@ -33,8 +34,7 @@ export function PickParticipants({ title, profiles, selected, onChange, exclude 
   }
 
   return (
-    <div className="card">
-      <h2>{title}</h2>
+    <Section title={title}>
       <div className="chips">
         {PRESETS.map((p) => (
           <button key={p.label} className="btn secondary compact" onClick={() => apply(p.sides)}>
@@ -54,6 +54,6 @@ export function PickParticipants({ title, profiles, selected, onChange, exclude 
           </label>
         ))}
       </div>
-    </div>
+    </Section>
   )
 }

@@ -1,5 +1,6 @@
 import { SATURATION_PER_WOUND, clampSaturation } from '../rules'
 import { NumberField } from './fields'
+import { Section } from './Section'
 
 interface Props {
   value: number
@@ -13,8 +14,7 @@ interface Props {
 export function SaturationCard({ value, onSet, onAdd }: Props) {
   const current = clampSaturation(value ?? 0)
   return (
-    <div className="card">
-      <h2>Saturación por curación</h2>
+    <Section title="Saturación por curación">
       <div
         className="bar"
         role="progressbar"
@@ -41,6 +41,6 @@ export function SaturationCard({ value, onSet, onAdd }: Props) {
         </button>
       </div>
       <p className="muted small">No suma sola: la llevas tú cuando se cura.</p>
-    </div>
+    </Section>
   )
 }

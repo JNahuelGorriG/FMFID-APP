@@ -1,6 +1,7 @@
 import { RANKS, weaponFromTable } from '../rules'
 import type { WeaponSize, WeaponState, WeaponTarget } from '../rules'
 import { NumberField, SelectField } from './fields'
+import { Section } from './Section'
 
 const SIZE_OPTIONS: { value: WeaponSize; label: string }[] = [
   { value: 'pequena', label: 'Pequeña' },
@@ -25,8 +26,7 @@ interface Props {
 /** Arma equipada de un jugador o NPC. Mismo funcionamiento que la armadura: valor de la tabla, editable. */
 export function WeaponCard({ weapon, defaultRank, onChange }: Props) {
   return (
-    <div className="card">
-      <h2>Arma</h2>
+    <Section title="Arma">
       {weapon ? (
         <>
           <p className="result" role="status">
@@ -88,6 +88,6 @@ export function WeaponCard({ weapon, defaultRank, onChange }: Props) {
           </button>
         </>
       )}
-    </div>
+    </Section>
   )
 }

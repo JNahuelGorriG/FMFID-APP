@@ -2,6 +2,7 @@ import { STAT_NAMES, baseLimit, buffCap } from '../rules'
 import type { CapInfo, RankGroup, StatCaps, StatName } from '../rules'
 import { NumberField } from './fields'
 import { GROUP_LABELS, STAT_LABELS, fmt } from './format'
+import { Section } from './Section'
 
 interface Props {
   caps: StatCaps
@@ -31,8 +32,7 @@ export function StatCapsCard({ caps, info, group, rankName, limitRaise, raises, 
     }))
 
   return (
-    <div className="card" aria-label="Límite de los buffs">
-      <h2>Límite de los buffs</h2>
+    <Section title="Límite de los buffs" aria-label="Límite de los buffs">
       <p className="muted small">
         Rango {rankName ?? 'sin rango'} (grupo {GROUP_LABELS[group]}): los buffs no pueden llevar un stat más de{' '}
         <strong>{cap}</strong> puntos por encima del valor natural de su stat vinculado (sin buffs). Solo recorta buffs,
@@ -112,6 +112,6 @@ export function StatCapsCard({ caps, info, group, rankName, limitRaise, raises, 
           Restablecer los topes
         </button>
       </div>
-    </div>
+    </Section>
   )
 }

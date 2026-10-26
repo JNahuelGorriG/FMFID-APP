@@ -40,6 +40,8 @@ export interface ActionLog {
   participantId: string
   /** El participante afectado tal como estaba antes. */
   before: Participant
+  /** Si la acción afectó a varios: los demás, tal como estaban antes. */
+  also?: Participant[]
 }
 
 /**
@@ -241,14 +243,22 @@ export function recordAction(combat: Combat, text: string, before: Participant):
 }
 
 /** Deshace la última acción registrada: el participante vuelve a como estaba. */
+/** Anota un cambio hecho a varios participantes a la vez, para deshacerlo de una sola vez. */
+export function recordActionMany(combat: Combat, text: string, befores: Participant[]): Combat {
+  if (befores.length === 0) return combat
+  const [first, ...others] = befores
+  const entry: ActionLog = { id: crypto.randomUUID(), text, participantId: first.id, before: first, also: others }
+  return { ...combat, history: [entry, ...combat.history].slice(0, MAX_HISTORY) }
+}
+
 export function undoLastAction(combat: Combat): Combat {
   const [last, ...rest] = combat.history
   if (!last) return combat
-  const exists = combat.participants.some((p) => p.id === last.participantId)
-  return {
-    ...(exists ? updateParticipant(combat, last.participantId, () => last.before) : combat),
-    history: rest,
+  let next = combat
+  for (const before of [last.before, ...(last.also ?? [])]) {
+    if (next.participants.some((p) => p.id === before.id)) next = updateParticipant(next, before.id, () => before)
   }
+  return { ...next, history: rest }
 }
 
 const effectLabel = (e: Effect): string => (e.kind === 'buff' ? 'buff' : 'debuff')

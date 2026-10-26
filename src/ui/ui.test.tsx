@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { db } from '../db'
@@ -8,6 +8,11 @@ import { edward } from '../rules/fixtures'
 import { combatRepo, npcRepo, repo } from './data'
 import { defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext, updateParticipant } from '../rules'
 import type { Character } from '../rules'
+
+// En una máquina lenta o con otros programas abiertos, esperar a que la pantalla cargue puede pasar de 1 segundo
+// (lo que usa Testing Library por defecto). Se da más margen para que las pruebas no fallen por lentitud.
+configure({ asyncUtilTimeout: 5000 })
+vi.setConfig({ testTimeout: 20000 })
 
 const { id: _id, createdAt: _c, updatedAt: _u, ...edwardData } = edward
 
@@ -1292,8 +1297,10 @@ describe('app', () => {
 
   it('pestaña Buffs: un buff se aplica a varios combatientes de una vez', async () => {
     await setUpDuel()
-    goTo('Buffs')
-    fireEvent.click(await screen.findByText('Todos'))
+    goTo('Efectos')
+    // la pantalla muestra el selector enseguida y el formulario al terminar de cargar los tipos
+    await screen.findByText(/Aplicar a \d+ combatiente/)
+    fireEvent.click(screen.getByText('Todos'))
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Bendición' } })
     fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '20' } })
     fireEvent.click(screen.getByLabelText('Afecta a Destreza'))
@@ -1317,7 +1324,7 @@ describe('app', () => {
 
   it('pestaña Buffs: aplica solo a los elegidos y avisa si no hay nadie', async () => {
     await setUpDuel()
-    goTo('Buffs')
+    goTo('Efectos')
     fireEvent.change(await screen.findByLabelText('Valor fijo'), { target: { value: '20' } })
     fireEvent.click(screen.getByText('Aplicar a 0 combatiente(s)'))
     expect((await screen.findByRole('alert')).textContent).toContain('Elige a quiénes')
@@ -1333,8 +1340,10 @@ describe('app', () => {
 
   it('pestaña Buffs: un debuff a varios y quitarlo desde el resumen', async () => {
     await setUpDuel()
-    goTo('Buffs')
-    fireEvent.click(await screen.findByText('Todos'))
+    goTo('Efectos')
+    // la pantalla muestra el selector enseguida y el formulario al terminar de cargar los tipos
+    await screen.findByText(/Aplicar a \d+ combatiente/)
+    fireEvent.click(screen.getByText('Todos'))
     fireEvent.change(screen.getByLabelText('Clase'), { target: { value: 'debuff' } })
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Maldición' } })
     fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '15' } })
@@ -1355,7 +1364,7 @@ describe('app', () => {
 
   it('pestaña Buffs: el Espíritu se aplica a varios con el valor de cada rango, y se quita con nivel 0', async () => {
     await setUpDuel()
-    goTo('Buffs')
+    goTo('Efectos')
     fireEvent.click(await screen.findByText('Todos'))
     fireEvent.click(screen.getByText('Espíritu', { selector: 'button' }))
     fireEvent.change(await screen.findByLabelText('Nivel de Espíritu'), { target: { value: '3' } })
@@ -1382,8 +1391,10 @@ describe('app', () => {
 
   it('pestaña Buffs: "Terminó la habilidad" a varios quita lo de la habilidad solo a los elegidos', async () => {
     await setUpDuel()
-    goTo('Buffs')
-    fireEvent.click(await screen.findByText('Todos'))
+    goTo('Efectos')
+    // la pantalla muestra el selector enseguida y el formulario al terminar de cargar los tipos
+    await screen.findByText(/Aplicar a \d+ combatiente/)
+    fireEvent.click(screen.getByText('Todos'))
     fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'habilidad' } })
     fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '20' } })
     fireEvent.click(screen.getByText('Aplicar a 2 combatiente(s)'))
@@ -1458,7 +1469,7 @@ describe('app', () => {
 
   it('pestaña Buffs: el aumento del límite se aplica a varios, aparte del Espíritu', async () => {
     await setUpDuel()
-    goTo('Buffs')
+    goTo('Efectos')
     fireEvent.click(await screen.findByText('Todos'))
     fireEvent.click(screen.getByText('Aumento del límite', { selector: 'button' }))
     fireEvent.change(await screen.findByLabelText('Origen del aumento'), { target: { value: 'estado' } })
@@ -1539,5 +1550,270 @@ describe('app', () => {
     goTo('Turnos')
     await openFirstParticipant()
     expect(await screen.findByText('Sin vida: no queda nada por descontar.')).toBeTruthy()
+  })
+
+  const participantOf = async (name: string) => (await combatRepo.list())[0].participants.find((p) => p.name === name)!
+
+  it('combate: las secciones están en el orden del usuario y Efectos va después de Ataque', async () => {
+    await setUpDuel()
+    const nav = await screen.findByLabelText('Secciones del combate')
+    expect(Array.from(nav.querySelectorAll('button')).map((b) => b.textContent)).toEqual([
+      'Turnos', 'Ataque', 'Efectos', 'Comparar', 'Checks', 'Agregar',
+    ])
+  })
+
+  it('vida a varios: da una barrera de heridas a los jugadores y de puntos a los NPC', async () => {
+    await setUpDuel()
+    goTo('Efectos')
+    fireEvent.click(await screen.findByText('Barrera', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Barrera de jugadores: leves'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('Barrera de NPCs: puntos'), { target: { value: '10' } })
+    fireEvent.click(screen.getByText('Dar barrera a 2 combatiente(s)'))
+    await waitFor(async () => {
+      expect((await participantOf('Edward')).pc?.barriers[0].wounds).toEqual({ leve: 2, medio: 0, letal: 0 })
+      expect((await participantOf('Goblin')).npc?.barriers[0].points).toBe(10)
+    })
+    const result = await screen.findByLabelText('Resultado por combatiente')
+    expect(result.textContent).toContain('Edward: barrera de 2 leves')
+    expect(result.textContent).toContain('Goblin: barrera de 10 puntos')
+  })
+
+  it('vida a varios: avisa si no se eligió a nadie o si no hay monto', async () => {
+    await setUpDuel()
+    goTo('Efectos')
+    fireEvent.click(await screen.findByText('Barrera', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Dar barrera a 0 combatiente(s)'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Elige a quiénes')
+    fireEvent.click(screen.getByText('Todos'))
+    fireEvent.click(await screen.findByText('Dar barrera a 2 combatiente(s)'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Indica la barrera')
+    expect((await participantOf('Edward')).pc?.barriers).toEqual([])
+  })
+
+  it('vida a varios: cura a los jugadores con la tabla y a los NPC con puntos', async () => {
+    await setUpDuel()
+    const [c0] = await combatRepo.list()
+    const max = (await participantOf('Goblin')).npc!.hpMax
+    await combatRepo.update(c0.id, (c) =>
+      updateParticipant(
+        updateParticipant(c, c.participants.find((p) => p.name === 'Edward')!.id, (p) => ({ ...p, pc: p.pc ? { ...p.pc, health: { leve: 4, medio: 7, letal: 3 } } : null })),
+        c.participants.find((p) => p.name === 'Goblin')!.id,
+        (p) => ({ ...p, npc: p.npc ? { ...p.npc, hpCurrent: max - 6 } : null }),
+      ),
+    )
+    goTo('Efectos')
+    fireEvent.click(await screen.findByText('Curar', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Nivel de curación'), { target: { value: '3' } })
+    expect(screen.getByLabelText('Opción 1: 8L')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Curación de NPCs: puntos'), { target: { value: '4' } })
+    fireEvent.click(screen.getByText('Curar a 2 combatiente(s)'))
+
+    await waitFor(async () => {
+      const ed = (await participantOf('Edward')).pc!
+      expect(ed.health.leve).toBe(10) // curó los 6 leves que le faltaban
+      expect(ed.saturation).toBe(6)
+      expect((await participantOf('Goblin')).npc?.hpCurrent).toBe(max - 2)
+    })
+    const result = await screen.findByLabelText('Resultado por combatiente')
+    expect(result.textContent).toContain('Edward: cura 6 leves')
+    expect(result.textContent).toContain(`Goblin: vida ${max - 6} → ${max - 2}`)
+  })
+
+  it('vida a varios: daña a los jugadores en heridas y a los NPC en puntos, cuenta qué pasó y se deshace', async () => {
+    await setUpDuel()
+    const hp = (await participantOf('Goblin')).npc!.hpCurrent
+    goTo('Efectos')
+    fireEvent.click(await screen.findByText('Dañar', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Daño a jugadores: leves'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Daño a jugadores: medios'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Daño a NPCs: puntos'), { target: { value: '4' } })
+    fireEvent.click(screen.getByText('Dañar a 2 combatiente(s)'))
+
+    await waitFor(async () => {
+      expect((await participantOf('Edward')).pc?.health).toEqual({ leve: 9, medio: 6, letal: 3 })
+      expect((await participantOf('Goblin')).npc?.hpCurrent).toBe(hp - 4)
+    })
+    const result = await screen.findByLabelText('Resultado por combatiente')
+    expect(result.textContent).toContain('Edward: recibe 1 medio + 1 leve')
+    expect(result.textContent).toContain('vida: leves 10 → 9, medios 7 → 6')
+    expect(result.textContent).toContain(`Goblin: −4 de vida (${hp} → ${hp - 4})`)
+    expect((await combatRepo.list())[0].alerts[0].text).toContain('Daño a 2 combatiente(s)')
+
+    // un solo deshacer vuelve a los dos
+    fireEvent.click(await screen.findByText('Deshacer última acción'))
+    await waitFor(async () => {
+      expect((await participantOf('Edward')).pc?.health).toEqual({ leve: 10, medio: 7, letal: 3 })
+      expect((await participantOf('Goblin')).npc?.hpCurrent).toBe(hp)
+    })
+  })
+
+  it('vida a varios: solo daña a los elegidos', async () => {
+    await setUpDuel()
+    goTo('Efectos')
+    fireEvent.click(await screen.findByText('Dañar', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Enemigos'))
+    fireEvent.change(screen.getByLabelText('Daño a NPCs: puntos'), { target: { value: '3' } })
+    fireEvent.click(screen.getByText('Dañar a 1 combatiente(s)'))
+    await waitFor(async () => expect((await participantOf('Goblin')).npc?.hpCurrent).toBeLessThan((await participantOf('Goblin')).npc!.hpMax))
+    expect((await participantOf('Edward')).pc?.health).toEqual({ leve: 10, medio: 7, letal: 3 })
+  })
+
+  it('secciones: el panel del jugador se contrae y se expande todo de una vez', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+    await screen.findByText('Contraer todo')
+    const all = () => Array.from(document.querySelectorAll<HTMLDetailsElement>('details.section'))
+    // los botones aparecen antes que las secciones: se espera a que termine de cargar el panel
+    await waitFor(() => expect(all().length).toBeGreaterThan(5))
+    expect(all().every((d) => d.open)).toBe(true)
+
+    fireEvent.click(screen.getByText('Contraer todo'))
+    await waitFor(() => expect(all().every((d) => !d.open)).toBe(true))
+    fireEvent.click(screen.getByText('Expandir todo'))
+    await waitFor(() => expect(all().every((d) => d.open)).toBe(true))
+  })
+
+  it('secciones: se recuerda la sección que se cerró', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+    const armor = (await screen.findByText('Armadura', { selector: 'h2' })).closest('details') as HTMLDetailsElement
+    armor.open = false
+    fireEvent(armor, new Event('toggle'))
+    await waitFor(() => expect(localStorage.getItem('fmfid-section:Armadura')).toBe('0'))
+  })
+
+  /** Abre Más y, si se pide, captura el archivo que se descarga. */
+  async function openExport() {
+    const created: Blob[] = []
+    const names: string[] = []
+    URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+      created.push(b as Blob)
+      return 'blob:fake'
+    })
+    URL.revokeObjectURL = vi.fn()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download)
+    })
+    render(<App />)
+    fireEvent.click(screen.getByText('Más'))
+    await screen.findByText('Exportar stats (txt)')
+    const read = (blob: Blob) =>
+      new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.readAsText(blob)
+      })
+    return { created, names, read }
+  }
+
+  it('exportar stats: se elige a quién y se descarga un txt con sus stats', async () => {
+    await repo.create(edwardData)
+    await repo.create({ ...edwardData, name: 'Roy', playerName: 'Marcos' })
+    const { created, names, read } = await openExport()
+
+    fireEvent.click(await screen.findByText('Descargar .txt'))
+    expect((await screen.findByText('Elige al menos un personaje.')).textContent).toBeTruthy()
+    expect(created).toHaveLength(0)
+
+    fireEvent.click(await screen.findByLabelText('Exportar Edward'))
+    fireEvent.click(screen.getByText('Descargar .txt'))
+    await waitFor(() => expect(created).toHaveLength(1))
+    const text = await read(created[0])
+    expect(text).toContain('EDWARD')
+    expect(text).not.toContain('ROY')
+    expect(text).toContain('Fuerza:')
+    expect(text).toContain('DAÑO Y DEFENSAS') // viene tildado por defecto
+    expect(names[0]).toMatch(/^fmfid-stats-edward-\d{4}-\d{2}-\d{2}\.txt$/)
+  })
+
+  it('exportar stats: con varios personajes y las opciones elegidas', async () => {
+    await repo.create(edwardData)
+    await repo.create({ ...edwardData, name: 'Roy' })
+    const { created, names, read } = await openExport()
+
+    fireEvent.click(await screen.findByText('Elegir a los activos'))
+    fireEvent.click(screen.getByLabelText('Incluir potenciaciones (Ki, Kyushu…)'))
+    fireEvent.click(screen.getByLabelText('Incluir el desglose de cada stat'))
+    fireEvent.click(screen.getByLabelText('Incluir daño y defensas')) // se quita
+    fireEvent.click(screen.getByText('Descargar .txt'))
+    await waitFor(() => expect(created).toHaveLength(1))
+    const text = await read(created[0])
+    expect(text).toContain('EDWARD')
+    expect(text).toContain('ROY')
+    expect(text).toContain('POTENCIACIONES')
+    expect(text).toContain('DESGLOSE DE STATS')
+    expect(text).not.toContain('DAÑO Y DEFENSAS')
+    expect(names[0]).toMatch(/^fmfid-stats-\d{4}-\d{2}-\d{2}\.txt$/)
+  })
+
+  it('exportar stats: se puede copiar al portapapeles y se ve una vista previa', async () => {
+    await repo.create(edwardData)
+    const written: string[] = []
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async (t: string) => void written.push(t)) }, configurable: true })
+    await openExport()
+    fireEvent.click(await screen.findByLabelText('Exportar Edward'))
+    fireEvent.click(screen.getByText('Copiar'))
+    await waitFor(() => expect(written).toHaveLength(1))
+    expect(written[0]).toContain('EDWARD')
+    expect((await screen.findByText(/Stats copiados/)).textContent).toBeTruthy()
+    expect((await screen.findByLabelText('Vista previa del txt')).textContent).toContain('EDWARD')
+  })
+
+  it('efectos: los modos están en orden (buff y debuff, curación y barrera, daño) y se elige a quiénes una sola vez', async () => {
+    await setUpDuel()
+    goTo('Efectos')
+    const group = await screen.findByLabelText('Qué aplicar')
+    expect(Array.from(group.querySelectorAll('button')).map((b) => b.textContent)).toEqual([
+      'Buff o debuff', 'Espíritu', 'Aumento del límite', 'Curar', 'Barrera', 'Dañar',
+    ])
+
+    // los elegidos se mantienen al pasar de un efecto a otro
+    fireEvent.click(await screen.findByText('Todos'))
+    expect(await screen.findByText('Aplicar a 2 combatiente(s)')).toBeTruthy()
+    fireEvent.click(screen.getByText('Curar', { selector: 'button' }))
+    expect(await screen.findByText('Curar a 2 combatiente(s)')).toBeTruthy()
+    fireEvent.click(screen.getByText('Barrera', { selector: 'button' }))
+    expect(await screen.findByText('Dar barrera a 2 combatiente(s)')).toBeTruthy()
+    fireEvent.click(screen.getByText('Dañar', { selector: 'button' }))
+    expect(await screen.findByText('Dañar a 2 combatiente(s)')).toBeTruthy()
+  })
+
+  it('efectos: el aviso de "Elige a quiénes" desaparece al elegir', async () => {
+    await setUpDuel()
+    goTo('Efectos')
+    fireEvent.click(await screen.findByText('Dañar', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Dañar a 0 combatiente(s)'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Elige a quiénes')
+    fireEvent.click(screen.getByText('Todos'))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('efectos: buffs y daño conviven en la misma pantalla sin pisarse', async () => {
+    await setUpDuel()
+    goTo('Efectos')
+    // la pantalla muestra el selector enseguida y el formulario al terminar de cargar los tipos
+    await screen.findByText(/Aplicar a \d+ combatiente/)
+    fireEvent.click(screen.getByText('Todos'))
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Bendición' } })
+    fireEvent.change(screen.getByLabelText('Valor fijo'), { target: { value: '20' } })
+    fireEvent.click(screen.getByText('Aplicar a 2 combatiente(s)'))
+    await waitFor(async () => expect((await participantOf('Edward')).pc?.effects).toHaveLength(1))
+
+    fireEvent.click(screen.getByText('Dañar', { selector: 'button' }))
+    fireEvent.change(await screen.findByLabelText('Daño a jugadores: leves'), { target: { value: '2' } })
+    fireEvent.click(screen.getByText('Dañar a 2 combatiente(s)'))
+    await waitFor(async () => expect((await participantOf('Edward')).pc?.health.leve).toBe(8))
+    expect((await participantOf('Edward')).pc?.effects).toHaveLength(1) // el buff sigue
   })
 })

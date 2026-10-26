@@ -4,6 +4,7 @@ import { RANKS, addNpcParticipant, addPcParticipant } from '../../rules'
 import type { Combat, NpcKind } from '../../rules'
 import { combatRepo, npcRepo, repo } from '../data'
 import { NumberField, OptionalNumberField, SelectField, TextField } from '../fields'
+import { Section } from '../Section'
 
 const RANK_OPTIONS = RANKS.map((r) => ({ value: r.name, label: r.name }))
 const MAX_RESULTS = 40
@@ -34,8 +35,7 @@ export function AddView({ combat }: { combat: Combat }) {
 
   return (
     <>
-      <div className="card">
-        <h2>Jugador</h2>
+      <Section title="Jugador">
         {available.length > 0 ? (
           <>
             <SelectField
@@ -55,10 +55,9 @@ export function AddView({ combat }: { combat: Combat }) {
         ) : (
           <p className="muted small">No quedan jugadores por agregar.</p>
         )}
-      </div>
+      </Section>
 
-      <div className="card">
-        <h2>NPC o bestia</h2>
+      <Section title="NPC o bestia">
         <div className="seg" role="group" aria-label="Lista">
           {(['bestia', 'npc'] as const).map((k) => (
             <button
@@ -149,7 +148,7 @@ export function AddView({ combat }: { combat: Combat }) {
             </button>
           </>
         )}
-      </div>
+      </Section>
     </>
   )
 }
