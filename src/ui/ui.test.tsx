@@ -1816,4 +1816,71 @@ describe('app', () => {
     await waitFor(async () => expect((await participantOf('Edward')).pc?.health.leve).toBe(8))
     expect((await participantOf('Edward')).pc?.effects).toHaveLength(1) // el buff sigue
   })
+
+  const despertares = async () => {
+    const c = (await repo.list())[0]
+    return Object.values(c.sources).map((x) => x.despertar)
+  }
+
+  it('despertar: se suma el mismo monto a los 7 stats desde la ficha y queda en el historial', async () => {
+    await repo.create(edwardData)
+    const before = await despertares()
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    await screen.findByText('Hoy: ', { exact: false })
+    fireEvent.change(await screen.findByLabelText('Cantidad de despertar'), { target: { value: '20' } })
+    expect((await screen.findByText(/Si lo sumas: promedio/)).textContent).toContain('rango')
+    fireEvent.click(screen.getByText('Sumar 20 a los 7 stats'))
+
+    await waitFor(async () => expect(await despertares()).toEqual(before.map((v) => v + 20)))
+    const history = await repo.history((await repo.list())[0].id)
+    expect(history.some((h) => h.reason === 'Despertar: sumó 20 a los 7 stats' && h.path.endsWith('.despertar'))).toBe(true)
+    expect((await screen.findByText(/Listo: despertar: sumó 20/)).textContent).toBeTruthy()
+  })
+
+  it('despertar: se pone el mismo valor en los 7 stats', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.change(await screen.findByLabelText('Cantidad de despertar'), { target: { value: '45' } })
+    fireEvent.click(screen.getByText('Poner en 45 en los 7'))
+    await waitFor(async () => expect(await despertares()).toEqual(Array(7).fill(45)))
+    // ahora son iguales y la ficha lo dice
+    expect(await screen.findByText('45', { selector: 'strong' })).toBeTruthy()
+  })
+
+  it('despertar: si ya estaba así avisa y no ensucia el historial', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Sumar 0 a los 7 stats'))
+    expect((await screen.findByText('No cambia nada: ya estaba así.')).textContent).toBeTruthy()
+    expect(await repo.history((await repo.list())[0].id)).toHaveLength(0)
+  })
+
+  it('despertar: también se puede cambiar desde el árbol de stats', async () => {
+    await repo.create(edwardData)
+    const before = await despertares()
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Árbol de stats'))
+    await screen.findByText('Árbol de Edward')
+    fireEvent.change(await screen.findByLabelText('Cantidad de despertar'), { target: { value: '10' } })
+    fireEvent.click(screen.getByText('Sumar 10 a los 7 stats'))
+    await waitFor(async () => expect(await despertares()).toEqual(before.map((v) => v + 10)))
+  })
+
+  it('despertar: en la edición se cambia el borrador de los 7 stats y se guarda con motivo', async () => {
+    await repo.create(edwardData)
+    const before = await despertares()
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Editar'))
+    fireEvent.change(await screen.findByLabelText('Cantidad de despertar (todos los stats)'), { target: { value: '30' } })
+    fireEvent.click(screen.getByText('Sumar a los 7 stats'))
+    fireEvent.change(screen.getByLabelText('Motivo del cambio'), { target: { value: 'Subió de nivel' } })
+    expect(await screen.findByText('7 dato(s) para guardar.')).toBeTruthy()
+    fireEvent.click(screen.getByText('Guardar cambios'))
+    await waitFor(async () => expect(await despertares()).toEqual(before.map((v) => v + 30)))
+  })
 })

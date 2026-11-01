@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { STAT_NAMES, characterSheet, splitEnergy } from '../rules'
 import { repo } from './data'
 import { STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue } from './format'
+import { AwakeningCard } from './AwakeningCard'
 import { CollapseAll, Section } from './Section'
 
 interface Props {
@@ -56,6 +57,8 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
       <button className="btn secondary tree-link" onClick={onOpenTree}>
         Árbol de stats
       </button>
+
+      <AwakeningCard character={character} />
 
       <div className="grid-3">
         <div className="card tile">

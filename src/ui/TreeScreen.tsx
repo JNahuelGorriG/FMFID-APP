@@ -17,6 +17,7 @@ import type { BranchId, Character, Choice, NodeDef, NodeState } from '../rules'
 import { repo } from './data'
 import { NumberField, SelectField, TextAreaField, TextField } from './fields'
 import { STAT_LABELS, fmt } from './format'
+import { AwakeningCard } from './AwakeningCard'
 import { CollapseAll, Section } from './Section'
 
 const BRANCH_LABELS: Record<BranchId, string> = { ...STAT_LABELS, heroe: 'Héroe', categoria: 'Categoría' }
@@ -150,6 +151,8 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
           Gastados en total: {fmt(totals.bp)} BP en {tree.purchases.length} compras.
         </p>
       </Section>
+
+      <AwakeningCard character={character} />
 
       <Section title="Compuertas">
         {([2, 3] as const).map((stage) => {

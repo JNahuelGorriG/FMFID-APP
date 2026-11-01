@@ -3,9 +3,11 @@ import { useState } from 'react'
 import { diffPaths, setIn } from '../db'
 import {
   STAT_NAMES,
+  addAwakening,
   characterSheet,
   referenceArmorBonus,
   referenceWeaponBonus,
+  setAwakening,
   validateCharacter,
 } from '../rules'
 import type {
@@ -68,6 +70,7 @@ function EditForm({
   const [draft, setDraft] = useState<Character>(original)
   const [reason, setReason] = useState('')
   const [errors, setErrors] = useState<string[]>([])
+  const [awakening, setAwakeningAmount] = useState(0)
 
   const set = (path: string, value: unknown) => setDraft((d) => setIn(d, path, value, true))
   const changes = diffPaths(original, draft)
@@ -143,6 +146,22 @@ function EditForm({
             options={[{ value: '', label: 'Ninguno' }, ...STAT_NAMES.map((n) => ({ value: n as string, label: STAT_LABELS[n] }))]}
             onChange={(v) => setSuper('terciario', v)}
           />
+        </div>
+      </Section>
+
+      <Section title="Despertar de todos los stats">
+        <p className="muted small">
+          El despertar es el mismo monto para los 7 stats. Aquí lo cambias en todos a la vez en el borrador: se guarda
+          con "Guardar cambios", junto con el motivo.
+        </p>
+        <NumberField label="Cantidad de despertar (todos los stats)" value={awakening} onChange={setAwakeningAmount} />
+        <div className="actions">
+          <button className="btn secondary compact" onClick={() => setDraft((d) => addAwakening(d, awakening))}>
+            Sumar a los 7 stats
+          </button>
+          <button className="btn secondary compact" onClick={() => setDraft((d) => setAwakening(d, awakening))}>
+            Poner en los 7 stats
+          </button>
         </div>
       </Section>
 
