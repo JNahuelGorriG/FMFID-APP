@@ -2,8 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { STAT_NAMES, characterSheet, splitEnergy } from '../rules'
 import { repo } from './data'
 import { STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue } from './format'
-import { AwakeningCard } from './AwakeningCard'
 import { CollapseAll, Section } from './Section'
+import { StatPointsCard } from './StatPointsCard'
 
 interface Props {
   id: string
@@ -58,7 +58,6 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
         Árbol de stats
       </button>
 
-      <AwakeningCard character={character} />
 
       <div className="grid-3">
         <div className="card tile">
@@ -142,6 +141,8 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
         </dl>
       </Section>
     
+      <StatPointsCard character={character} />
+
       <Section title={`Historial de cambios (${history?.length ?? 0})`} defaultOpen={false}>
         {history && history.length === 0 && <p className="muted small">Todavía no hay cambios.</p>}
         <ul className="history">

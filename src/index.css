@@ -307,3 +307,4 @@ details.section details.section { margin-top: 10px; }
 .report-preview { margin: 0; padding: 10px; overflow-x: auto; background: rgba(0,0,0,0.3); border-radius: 10px; font-size: 0.75rem; line-height: 1.35; white-space: pre; }
 
 .seg { flex-wrap: wrap; }
+

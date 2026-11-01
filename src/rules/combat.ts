@@ -200,6 +200,32 @@ export function setSpiritForMany(
   return next
 }
 
+/** Porcentaje (entero de 0 a 100) del aumento de Aetherium Ascendance que sigue valiendo. */
+export const clampPercent = (value: number): number => Math.min(100, Math.max(0, Math.round(Number.isFinite(value) ? value : 100)))
+
+/**
+ * Pone el porcentaje válido de Aetherium Ascendance de un combatiente. Su aumento se reduce un poco con cada
+ * uso, así que el valor se queda guardado entre ataques.
+ */
+export function setAscendancePercent(combat: Combat, participantId: string, percent: number): Combat {
+  const value = clampPercent(percent)
+  return updateParticipant(combat, participantId, (p) => {
+    if (p.pc) return { ...p, pc: { ...p.pc, ascendancePercent: value } }
+    if (p.npc) return { ...p, npc: { ...p.npc, ascendancePercent: value } }
+    return p
+  })
+}
+
+/**
+ * Sube o baja el porcentaje válido de Aetherium Ascendance respecto de lo guardado (no de lo que se ve en
+ * pantalla), así los toques seguidos se acumulan: dos veces −10 % dejan 80 %.
+ */
+export function adjustAscendancePercent(combat: Combat, participantId: string, delta: number): Combat {
+  const target = combat.participants.find((p) => p.id === participantId)
+  const current = target?.pc?.ascendancePercent ?? target?.npc?.ascendancePercent ?? 100
+  return setAscendancePercent(combat, participantId, current + delta)
+}
+
 /** Marca a un NPC como aliado o enemigo. Los jugadores siempre son "jugador". */
 export function setSide(combat: Combat, participantId: string, side: 'aliado' | 'enemigo'): Combat {
   return updateParticipant(combat, participantId, (p) => (p.kind === 'npc' ? { ...p, side } : p))

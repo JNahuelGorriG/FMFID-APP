@@ -20,7 +20,7 @@ import {
   updateParticipant,
   woundsForPc,
 } from '../../rules'
-import { TECHNIQUES, applyToPcDetailed } from '../../rules'
+import { TECHNIQUES, adjustAscendancePercent, applyToPcDetailed, setAscendancePercent } from '../../rules'
 import type { AttackType, Combat, Profile, StatName, Techniques, WoundCategory } from '../../rules'
 import { combatRepo } from '../data'
 import { NumberField, OptionalNumberField, SelectField } from '../fields'
@@ -103,10 +103,17 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
 
   // Defensa que participa: por defecto la del mismo tipo que el ataque, pero se puede elegir la otra.
   const defenseType: AttackType = defenseChoice ?? type
-  // Potenciaciones que se pueden sumar al daño: Esencia y E. Reinforced al físico, Kyushu y Magyushuru al mágico.
-  const boostKeys: (keyof Techniques)[] = type === 'fisico' ? ['esencia', 'eReinforced'] : ['kyushu', 'magyushuru']
+  // Potenciaciones que se pueden sumar al daño: Esencia y E. Reinforced al físico, y sus equivalentes mágicos
+  // (Aetherium Ascendance y Aetherium Mastery) al mágico. El aumento de Aetherium Ascendance se reduce con cada
+  // uso, así que solo vale el porcentaje que se elija.
+  const boostKeys: (keyof Techniques)[] = type === 'fisico' ? ['esencia', 'eReinforced'] : ['aetheriumAscendance', 'aetheriumMastery']
   const activeBoosts = boostKeys.filter((k) => boosts.includes(k))
-  const extra = activeBoosts.reduce((sum, k) => sum + attacker.techniques[k], 0)
+  /** Cuánto vale hoy el aumento de una potenciación (con su porcentaje válido, si lo tiene). */
+  const boostValue = (k: keyof Techniques): number =>
+    k === 'aetheriumAscendance' ? (attacker.techniques[k] * attacker.ascendancePercent) / 100 : attacker.techniques[k]
+  const extra = activeBoosts.reduce((sum, k) => sum + boostValue(k), 0)
+  const setAscendance = (percent: number) => void combatRepo.update(combat.id, (c) => setAscendancePercent(c, attacker.participantId, percent))
+  const adjustAscendance = (delta: number) => void combatRepo.update(combat.id, (c) => adjustAscendancePercent(c, attacker.participantId, delta))
   const techniqueName = (k: keyof Techniques) => TECHNIQUES.find((t) => t.key === k)?.name ?? k
   const parts = attacker.damageParts[type]
   const stage = damageStage(attacker, defender, type, { damage, defense, extra }, defenseType)
@@ -328,21 +335,48 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           {activeBoosts.map((k) => (
             <span key={k}>
               {' '}
-              + {techniqueName(k)} {fmt(attacker.techniques[k])}
+              + {techniqueName(k)} {fmt(boostValue(k))}
+              {k === 'aetheriumAscendance' && attacker.ascendancePercent < 100 && ` (${attacker.ascendancePercent} % de ${fmt(attacker.techniques[k])})`}
             </span>
           ))}
         </p>
         <div role="group" aria-label="Sumar al daño">
           {boostKeys.map((k) => (
-            <label key={k} className="check">
-              <input
-                type="checkbox"
-                aria-label={`Sumar ${techniqueName(k)}`}
-                checked={boosts.includes(k)}
-                onChange={(e) => setBoosts((prev) => (e.target.checked ? [...prev, k] : prev.filter((x) => x !== k)))}
-              />
-              Sumar {techniqueName(k)} (+{fmt(attacker.techniques[k])})
-            </label>
+            <div key={k}>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  aria-label={`Sumar ${techniqueName(k)}`}
+                  checked={boosts.includes(k)}
+                  onChange={(e) => setBoosts((prev) => (e.target.checked ? [...prev, k] : prev.filter((x) => x !== k)))}
+                />
+                Sumar {techniqueName(k)} (+{fmt(boostValue(k))})
+              </label>
+              {k === 'aetheriumAscendance' && (
+                <div className="ascendance">
+                  <NumberField
+                    label="Aetherium Ascendance: % válido del aumento"
+                    integer
+                    value={attacker.ascendancePercent}
+                    onChange={setAscendance}
+                  />
+                  <div className="actions">
+                    <button className="btn secondary compact" onClick={() => adjustAscendance(-10)}>
+                      −10 %
+                    </button>
+                    <button className="btn secondary compact" onClick={() => adjustAscendance(-20)}>
+                      −20 %
+                    </button>
+                    <button className="btn secondary compact" onClick={() => setAscendance(100)}>
+                      Restablecer
+                    </button>
+                  </div>
+                  <p className="muted small">
+                    Su aumento se reduce un 10 % o 20 % con cada uso. Queda guardado para los próximos ataques de {attacker.name}.
+                  </p>
+                </div>
+              )}
+            </div>
           ))}
         </div>
         <div className="grid-2">

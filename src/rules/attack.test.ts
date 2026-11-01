@@ -15,6 +15,9 @@ import {
   invertOutcome,
   outcomeRanges,
   applyToPcDetailed,
+  adjustAscendancePercent,
+  clampPercent,
+  setAscendancePercent,
   applyWounds,
   clampSaturation,
   saturationFor,
@@ -534,5 +537,44 @@ describe('daño que no se puede pagar entero', () => {
     const dead = applyToPcDetailed({ ...base, health: { leve: 0, medio: 0, letal: 0 } }, { leve: 2, medio: 1, letal: 0 }, 0)
     expect(dead.unpaid).toEqual({ letal: 0, medio: 1, leve: 2 })
     expect(dead.critical).toBe(true)
+  })
+})
+
+describe('porcentaje válido de Aetherium Ascendance', () => {
+  it('por defecto vale el 100 % del aumento', () => {
+    const { combat, pc, npc } = arena()
+    expect(buildProfile(combat.participants.find((p) => p.id === pc)!, edward)?.ascendancePercent).toBe(100)
+    expect(buildProfile(combat.participants.find((p) => p.id === npc)!)?.ascendancePercent).toBe(100)
+  })
+
+  it('se guarda por combatiente, para jugadores y NPC', () => {
+    const { combat, pc, npc } = arena()
+    const next = setAscendancePercent(setAscendancePercent(combat, pc, 80), npc, 60)
+    expect(buildProfile(next.participants.find((p) => p.id === pc)!, edward)?.ascendancePercent).toBe(80)
+    expect(buildProfile(next.participants.find((p) => p.id === npc)!)?.ascendancePercent).toBe(60)
+    // el otro combatiente no se toca
+    expect(next.participants.find((p) => p.id === pc)?.pc?.ascendancePercent).toBe(80)
+  })
+
+  it('es un entero de 0 a 100', () => {
+    expect([clampPercent(150), clampPercent(-5), clampPercent(72.6), clampPercent(0), clampPercent(100)]).toEqual([100, 0, 73, 0, 100])
+    expect(clampPercent(Number.NaN)).toBe(100)
+  })
+
+  it('bajar o subir se acumula sobre lo guardado, sin pasar de 0 ni de 100', () => {
+    const { combat, pc } = arena()
+    let c = adjustAscendancePercent(adjustAscendancePercent(combat, pc, -10), pc, -10)
+    expect(c.participants.find((p) => p.id === pc)?.pc?.ascendancePercent).toBe(80)
+    c = adjustAscendancePercent(c, pc, -100)
+    expect(c.participants.find((p) => p.id === pc)?.pc?.ascendancePercent).toBe(0)
+    c = adjustAscendancePercent(c, pc, 500)
+    expect(c.participants.find((p) => p.id === pc)?.pc?.ascendancePercent).toBe(100)
+  })
+
+  it('los combates guardados antes no lo tienen y valen 100 %', () => {
+    const { combat, pc } = arena()
+    const target = combat.participants.find((p) => p.id === pc)!
+    expect(target.pc?.ascendancePercent).toBeUndefined()
+    expect(buildProfile(target, edward)?.ascendancePercent).toBe(100)
   })
 })

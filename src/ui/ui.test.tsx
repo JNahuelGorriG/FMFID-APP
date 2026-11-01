@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { db } from '../db'
 import { edward } from '../rules/fixtures'
+import { characterSheet } from '../rules'
+import { fmt } from './format'
 import { combatRepo, npcRepo, repo } from './data'
-import { defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext, updateParticipant } from '../rules'
+import { branchNodes, defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext, purchaseNode, updateParticipant } from '../rules'
 import type { Character } from '../rules'
 
 // En una máquina lenta o con otros programas abiertos, esperar a que la pantalla cargue puede pasar de 1 segundo
@@ -987,10 +989,12 @@ describe('app', () => {
     // 505,9 contra la defensa SA 380 del Goblin: +125,9
     expect(screen.getByLabelText('Daño contra defensa').textContent).toContain('diferencia +125,9')
 
-    // para el daño mágico las opciones son Kyushu y Magyushuru
+    // para el daño mágico las opciones son Aetherium Ascendance y Aetherium Mastery
     fireEvent.change(screen.getByLabelText('Tipo de ataque'), { target: { value: 'magico' } })
-    expect(await screen.findByLabelText('Sumar Kyushu')).toBeTruthy()
-    expect(screen.getByLabelText('Sumar Magyushuru')).toBeTruthy()
+    expect(await screen.findByLabelText('Sumar Aetherium Ascendance')).toBeTruthy()
+    expect(screen.getByLabelText('Sumar Aetherium Mastery')).toBeTruthy()
+    expect(screen.queryByLabelText('Sumar Kyushu')).toBeNull()
+    expect(screen.queryByLabelText('Sumar Magyushuru')).toBeNull()
     expect(screen.queryByLabelText('Sumar Esencia')).toBeNull()
   })
 
@@ -1817,70 +1821,284 @@ describe('app', () => {
     expect((await participantOf('Edward')).pc?.effects).toHaveLength(1) // el buff sigue
   })
 
-  const despertares = async () => {
+  const puntos = async (source: 'merito' | 'despertar' | 'regalo' | 'otros' = 'despertar') => {
     const c = (await repo.list())[0]
-    return Object.values(c.sources).map((x) => x.despertar)
+    return STAT_ORDER.map((stat) => c.sources[stat][source])
+  }
+  const STAT_ORDER = ['fuerza', 'destreza', 'constitucion', 'percepcion', 'inteligencia', 'sabiduria', 'carisma'] as const
+
+  /** Abre la ficha de Edward. */
+  async function openSheet() {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    await screen.findByText('Subir puntos de Stats')
   }
 
-  it('despertar: se suma el mismo monto a los 7 stats desde la ficha y queda en el historial', async () => {
-    await repo.create(edwardData)
-    const before = await despertares()
-    render(<App />)
-    fireEvent.click(await screen.findByText('Edward'))
-    await screen.findByText('Hoy: ', { exact: false })
-    fireEvent.change(await screen.findByLabelText('Cantidad de despertar'), { target: { value: '20' } })
-    expect((await screen.findByText(/Si lo sumas: promedio/)).textContent).toContain('rango')
-    fireEvent.click(screen.getByText('Sumar 20 a los 7 stats'))
+  it('subir puntos: por defecto es despertar para los 7 stats, y se suma desde la ficha con historial', async () => {
+    await openSheet()
+    const before = await puntos()
+    fireEvent.change(await screen.findByLabelText('Cantidad de puntos'), { target: { value: '20' } })
+    expect((await screen.findByText(/Si los sumas: promedio/)).textContent).toContain('rango')
+    fireEvent.click(screen.getByText('Sumar 20 a 7 stat(s)'))
 
-    await waitFor(async () => expect(await despertares()).toEqual(before.map((v) => v + 20)))
+    await waitFor(async () => expect(await puntos()).toEqual(before.map((v) => v + 20)))
     const history = await repo.history((await repo.list())[0].id)
     expect(history.some((h) => h.reason === 'Despertar: sumó 20 a los 7 stats' && h.path.endsWith('.despertar'))).toBe(true)
-    expect((await screen.findByText(/Listo: despertar: sumó 20/)).textContent).toBeTruthy()
+    expect((await screen.findByText(/Listo: despertar: sumó 20 a los 7 stats/)).textContent).toBeTruthy()
   })
 
-  it('despertar: se pone el mismo valor en los 7 stats', async () => {
-    await repo.create(edwardData)
-    render(<App />)
-    fireEvent.click(await screen.findByText('Edward'))
-    fireEvent.change(await screen.findByLabelText('Cantidad de despertar'), { target: { value: '45' } })
-    fireEvent.click(screen.getByText('Poner en 45 en los 7'))
-    await waitFor(async () => expect(await despertares()).toEqual(Array(7).fill(45)))
-    // ahora son iguales y la ficha lo dice
+  it('subir puntos: se elige el tipo (mérito) y solo los stats que suben', async () => {
+    await openSheet()
+    const before = await puntos('merito')
+    const despertarBefore = await puntos('despertar')
+    fireEvent.change(await screen.findByLabelText('Tipo de puntos'), { target: { value: 'merito' } })
+    fireEvent.click(screen.getByText('Limpiar'))
+    fireEvent.click(screen.getByLabelText('Sube Fuerza'))
+    fireEvent.click(screen.getByLabelText('Sube Carisma'))
+    fireEvent.change(screen.getByLabelText('Cantidad de puntos'), { target: { value: '5' } })
+    fireEvent.click(screen.getByText('Sumar 5 a 2 stat(s)'))
+
+    await waitFor(async () => {
+      const after = await puntos('merito')
+      expect(after[0]).toBe(before[0] + 5) // Fuerza
+      expect(after[6]).toBe(before[6] + 5) // Carisma
+      expect(after.slice(1, 6)).toEqual(before.slice(1, 6)) // los demás no cambian
+    })
+    const history = await repo.history((await repo.list())[0].id)
+    expect(history.every((h) => h.reason === 'Mérito: sumó 5 a Fuerza, Carisma')).toBe(true)
+    expect(history.every((h) => h.path.endsWith('.merito'))).toBe(true)
+    expect(await puntos('despertar')).toEqual(despertarBefore) // el despertar queda como estaba
+  })
+
+  it('subir puntos: regalo y otros también', async () => {
+    await openSheet()
+    for (const source of ['regalo', 'otros'] as const) {
+      const before = await puntos(source)
+      fireEvent.change(await screen.findByLabelText('Tipo de puntos'), { target: { value: source } })
+      fireEvent.change(screen.getByLabelText('Cantidad de puntos'), { target: { value: '3' } })
+      fireEvent.click(screen.getByText('Sumar 3 a 7 stat(s)'))
+      await waitFor(async () => expect(await puntos(source)).toEqual(before.map((v) => v + 3)))
+    }
+  })
+
+  it('subir puntos: se pone el mismo valor y la ficha lo dice', async () => {
+    await openSheet()
+    fireEvent.change(await screen.findByLabelText('Cantidad de puntos'), { target: { value: '45' } })
+    fireEvent.click(screen.getByText('Poner en 45 en 7 stat(s)'))
+    await waitFor(async () => expect(await puntos()).toEqual(Array(7).fill(45)))
     expect(await screen.findByText('45', { selector: 'strong' })).toBeTruthy()
+    expect(screen.getByText(/Hoy \(Despertar\)/)).toBeTruthy()
   })
 
-  it('despertar: si ya estaba así avisa y no ensucia el historial', async () => {
-    await repo.create(edwardData)
-    render(<App />)
-    fireEvent.click(await screen.findByText('Edward'))
-    fireEvent.click(await screen.findByText('Sumar 0 a los 7 stats'))
+  it('subir puntos: sin stats elegidos no se puede aplicar, y si no cambia nada avisa', async () => {
+    await openSheet()
+    fireEvent.click(await screen.findByText('Limpiar'))
+    expect(await screen.findByText('Elige al menos un stat.')).toBeTruthy()
+    expect((screen.getByText('Sumar 0 a 0 stat(s)') as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByText('Los 7 stats'))
+    fireEvent.click(await screen.findByText('Sumar 0 a 7 stat(s)'))
     expect((await screen.findByText('No cambia nada: ya estaba así.')).textContent).toBeTruthy()
     expect(await repo.history((await repo.list())[0].id)).toHaveLength(0)
   })
 
-  it('despertar: también se puede cambiar desde el árbol de stats', async () => {
-    await repo.create(edwardData)
-    const before = await despertares()
-    render(<App />)
-    fireEvent.click(await screen.findByText('Edward'))
-    fireEvent.click(await screen.findByText('Árbol de stats'))
-    await screen.findByText('Árbol de Edward')
-    fireEvent.change(await screen.findByLabelText('Cantidad de despertar'), { target: { value: '10' } })
-    fireEvent.click(screen.getByText('Sumar 10 a los 7 stats'))
-    await waitFor(async () => expect(await despertares()).toEqual(before.map((v) => v + 10)))
+  it('subir puntos: en la ficha va entre Potenciaciones e Historial, que son las últimas', async () => {
+    await openSheet()
+    const titles = () => Array.from(document.querySelectorAll('details.section > summary h2')).map((h) => h.textContent)
+    await waitFor(() => expect(titles()).toContain('Subir puntos de Stats'))
+    const t = titles()
+    const i = t.indexOf('Subir puntos de Stats')
+    expect(t[i - 1]).toBe('Potenciaciones')
+    expect(t[i + 1]).toMatch(/^Historial de cambios/)
+    expect(t.at(-1)).toMatch(/^Historial de cambios/)
   })
 
-  it('despertar: en la edición se cambia el borrador de los 7 stats y se guarda con motivo', async () => {
+  it('subir puntos: también desde el árbol de stats, antes de las diferencias', async () => {
+    await openSheet()
+    const before = await puntos()
+    fireEvent.click(await screen.findByText('Árbol de stats'))
+    await screen.findByText('Árbol de Edward')
+    const titles = () => Array.from(document.querySelectorAll('details.section > summary h2')).map((h) => h.textContent)
+    await waitFor(() => expect(titles()).toContain('Subir puntos de Stats'))
+    expect(titles().at(-2)).toBe('Subir puntos de Stats')
+    fireEvent.change(await screen.findByLabelText('Cantidad de puntos'), { target: { value: '10' } })
+    fireEvent.click(screen.getByText('Sumar 10 a 7 stat(s)'))
+    await waitFor(async () => expect(await puntos()).toEqual(before.map((v) => v + 10)))
+  })
+
+  it('subir puntos: en la edición se cambia el borrador y se guarda con motivo', async () => {
     await repo.create(edwardData)
-    const before = await despertares()
+    const before = await puntos()
     render(<App />)
     fireEvent.click(await screen.findByText('Edward'))
     fireEvent.click(await screen.findByText('Editar'))
-    fireEvent.change(await screen.findByLabelText('Cantidad de despertar (todos los stats)'), { target: { value: '30' } })
-    fireEvent.click(screen.getByText('Sumar a los 7 stats'))
+    fireEvent.change(await screen.findByLabelText('Cantidad de puntos'), { target: { value: '30' } })
+    fireEvent.click(screen.getByText('Sumar 30 a 7 stat(s)'))
     fireEvent.change(screen.getByLabelText('Motivo del cambio'), { target: { value: 'Subió de nivel' } })
     expect(await screen.findByText('7 dato(s) para guardar.')).toBeTruthy()
     fireEvent.click(screen.getByText('Guardar cambios'))
-    await waitFor(async () => expect(await despertares()).toEqual(before.map((v) => v + 30)))
+    await waitFor(async () => expect(await puntos()).toEqual(before.map((v) => v + 30)))
+  })
+
+  /** Ataque mágico de Edward contra el Goblin, listo para sumar potenciaciones. */
+  async function magicAttack() {
+    await setUpDuel()
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Tipo de ataque'), { target: { value: 'magico' } })
+    await screen.findByLabelText('Sumar Aetherium Ascendance')
+    return characterSheet(edward).derived.techniques
+  }
+  const ascendance = async () => (await participantOf('Edward')).pc?.ascendancePercent
+
+  it('ataque mágico: se suman Aetherium Ascendance y Aetherium Mastery (la contraparte mágica de Esencia)', async () => {
+    const t = await magicAttack()
+    expect(t.aetheriumAscendance).toBeGreaterThan(0)
+    expect(screen.getByText(`Sumar Aetherium Ascendance (+${fmt(t.aetheriumAscendance)})`)).toBeTruthy()
+    expect(screen.getByText(`Sumar Aetherium Mastery (+${fmt(t.aetheriumMastery)})`)).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('Sumar Aetherium Mastery'))
+    const origin = () => screen.getByLabelText('Origen del daño').textContent ?? ''
+    await waitFor(() => expect(origin()).toContain(`+ Aetherium Mastery ${fmt(t.aetheriumMastery)}`))
+    fireEvent.click(screen.getByLabelText('Sumar Aetherium Ascendance'))
+    await waitFor(() => expect(origin()).toContain(`+ Aetherium Ascendance ${fmt(t.aetheriumAscendance)}`))
+  })
+
+  it('Aetherium Ascendance: se elige qué porcentaje del aumento es válido y solo ese cuenta', async () => {
+    const t = await magicAttack()
+    const base = (await screen.findByLabelText('Origen del daño')).textContent
+    expect(base).toBeTruthy()
+    expect((screen.getByLabelText('Aetherium Ascendance: % válido del aumento') as HTMLInputElement).value).toBe('100')
+
+    fireEvent.change(screen.getByLabelText('Aetherium Ascendance: % válido del aumento'), { target: { value: '80' } })
+    await waitFor(async () => expect(await ascendance()).toBe(80))
+    // el aumento que se ofrece ya viene reducido
+    const reduced = (t.aetheriumAscendance * 80) / 100
+    expect(await screen.findByText(`Sumar Aetherium Ascendance (+${fmt(reduced)})`)).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('Sumar Aetherium Ascendance'))
+    await waitFor(() => {
+      const text = screen.getByLabelText('Origen del daño').textContent ?? ''
+      expect(text).toContain(`+ Aetherium Ascendance ${fmt(reduced)} (80 % de ${fmt(t.aetheriumAscendance)})`)
+    })
+  })
+
+  it('Aetherium Ascendance: el porcentaje baja 10 o 20 con un toque, queda guardado y se puede restablecer', async () => {
+    await magicAttack()
+    fireEvent.click(screen.getByText('−10 %'))
+    await waitFor(async () => expect(await ascendance()).toBe(90))
+    fireEvent.click(screen.getByText('−20 %'))
+    await waitFor(async () => expect(await ascendance()).toBe(70))
+
+    // toques seguidos: cada uno resta sobre lo guardado, no sobre lo que se alcanzó a ver en pantalla
+    fireEvent.click(screen.getByText('−10 %'))
+    fireEvent.click(screen.getByText('−10 %'))
+    await waitFor(async () => expect(await ascendance()).toBe(50))
+    fireEvent.click(screen.getByText('Restablecer', { selector: 'button' }))
+    await waitFor(async () => expect(await ascendance()).toBe(100))
+    fireEvent.click(screen.getByText('−20 %'))
+    await waitFor(async () => expect(await ascendance()).toBe(80))
+    fireEvent.click(screen.getByText('−10 %'))
+    await waitFor(async () => expect(await ascendance()).toBe(70))
+
+    // se queda guardado aunque se cambie de pestaña y se vuelva (el ataque vuelve a empezar como físico)
+    goTo('Turnos')
+    goTo('Ataque')
+    fireEvent.change(await screen.findByLabelText('Tipo de ataque'), { target: { value: 'magico' } })
+    await waitFor(() => expect((screen.getByLabelText('Aetherium Ascendance: % válido del aumento') as HTMLInputElement).value).toBe('70'))
+
+    fireEvent.click(screen.getByText('Restablecer', { selector: 'button' }))
+    await waitFor(async () => expect(await ascendance()).toBe(100))
+  })
+
+  it('Aetherium Ascendance: el porcentaje no baja de 0 ni pasa de 100', async () => {
+    await magicAttack()
+    for (let i = 0; i < 6; i++) fireEvent.click(screen.getByText('−20 %'))
+    await waitFor(async () => expect(await ascendance()).toBe(0))
+    fireEvent.change(screen.getByLabelText('Aetherium Ascendance: % válido del aumento'), { target: { value: '250' } })
+    await waitFor(async () => expect(await ascendance()).toBe(100))
+  })
+
+  it('el porcentaje de Ascendance no cambia a Aetherium Mastery ni al daño físico', async () => {
+    const t = await magicAttack()
+    fireEvent.change(screen.getByLabelText('Aetherium Ascendance: % válido del aumento'), { target: { value: '50' } })
+    await waitFor(async () => expect(await ascendance()).toBe(50))
+    expect(await screen.findByText(`Sumar Aetherium Mastery (+${fmt(t.aetheriumMastery)})`)).toBeTruthy() // sin reducir
+
+    fireEvent.change(screen.getByLabelText('Tipo de ataque'), { target: { value: 'fisico' } })
+    expect(await screen.findByText(`Sumar Esencia (+${fmt(t.esencia)})`)).toBeTruthy()
+    expect(screen.queryByLabelText('Aetherium Ascendance: % válido del aumento')).toBeNull()
+  })
+
+  /** Edward con las etapas 1 y 2 de Héroe y los primeros 4 nodos de la 3, con el árbol de Héroe abierto. */
+  async function openHeroeStage3() {
+    let c: Character = { ...edward, tree: { ...emptyTree(), bp: 200, gates: { stage2: true, stage3: true } } }
+    for (const node of branchNodes('heroe').filter((n) => n.stage < 3)) c = purchaseNode(c, node.id, node.options[0])
+    for (let i = 0; i < 4; i++) c = purchaseNext(c, 'heroe', 'stat')
+    const { id: _i, createdAt: _c, updatedAt: _u, ...data } = c
+    await openTree(data)
+    fireEvent.click(await screen.findByText('Héroe 24/28')) // los 2 espacios por definir no cuentan en el total
+    await screen.findByText('Etapa 3')
+  }
+  const stage3Cards = () => Array.from(document.querySelectorAll<HTMLElement>('.card.node')).slice(20)
+
+  it('árbol: los espacios 5 y 10 de la etapa 3 de Héroe se ven, en su lugar, y se pueden comprar o saltear', async () => {
+    await openHeroeStage3()
+    const cards = stage3Cards()
+    expect(cards).toHaveLength(10)
+    expect(cards[4].textContent).toContain('5. Por definir')
+    expect(cards[4].textContent).toContain('opcional: se puede comprar o saltear')
+    expect(cards[4].textContent).toContain('Opcional')
+    expect(cards[5].textContent).toMatch(/^6\. /)
+    expect(cards[9].textContent).toContain('10. Por definir')
+    expect(cards[9].textContent).toContain('Bloqueado') // todavía faltan nodos de arriba
+    expect(within(cards[4]).getByText('Comprar')).toBeTruthy() // se puede comprar
+  })
+
+  it('árbol: se puede saltear el espacio por definir y seguir con los de abajo', async () => {
+    await openHeroeStage3()
+    fireEvent.click(within(stage3Cards()[5]).getByText('Comprar'))
+    fireEvent.click(await screen.findByText('Confirmar compra'))
+    await waitFor(async () => {
+      const t = (await repo.list())[0].tree
+      expect(t?.purchases.some((p) => p.nodeId === 'heroe:3:5')).toBe(true)
+      expect(t?.purchases.some((p) => p.nodeId === 'heroe:3:4')).toBe(false)
+    })
+    // el espacio sigue disponible, sin marcarse como pendiente
+    await waitFor(() => expect(stage3Cards()[4].textContent).toContain('Opcional'))
+    expect(stage3Cards()[4].textContent).not.toContain('Pendiente')
+  })
+
+  it('árbol: también se puede comprar el espacio por definir, anotando qué da, y descuenta los BP', async () => {
+    await openHeroeStage3()
+    const bpBefore = (await repo.list())[0].tree!.bp
+    fireEvent.click(within(stage3Cards()[4]).getByText('Comprar'))
+    fireEvent.change(await screen.findByLabelText('Qué da este espacio (opcional)'), { target: { value: 'Visión del héroe' } })
+    fireEvent.click(screen.getByText('Confirmar compra'))
+
+    await waitFor(async () => {
+      const c = (await repo.list())[0]
+      expect(c.tree?.bp).toBe(bpBefore - 5)
+      expect(c.tree?.purchases.at(-1)).toMatchObject({ nodeId: 'heroe:3:4', choice: 'hab', note: 'Visión del héroe', cost: 5 })
+    })
+    await waitFor(() => expect(stage3Cards()[4].textContent).toContain('Comprado'))
+    expect(stage3Cards()[4].textContent).toContain('Eligió: Espacio por definir · Visión del héroe')
+    // el avance cuenta el espacio comprado en el total
+    expect(await screen.findByText('Héroe 25/29')).toBeTruthy()
+  })
+
+  it('árbol: el espacio por definir se compra aunque no se anote nada', async () => {
+    await openHeroeStage3()
+    fireEvent.click(within(stage3Cards()[4]).getByText('Comprar'))
+    fireEvent.click(await screen.findByText('Confirmar compra'))
+    await waitFor(async () => expect((await repo.list())[0].tree?.purchases.at(-1)).toMatchObject({ nodeId: 'heroe:3:4', note: '' }))
+  })
+
+  it('árbol: las otras ramas no tienen espacios por definir', async () => {
+    await openSheet()
+    fireEvent.click(await screen.findByText('Árbol de stats'))
+    await screen.findByText('Árbol de Edward')
+    await screen.findAllByText('Etapa 3')
+    expect(screen.queryByText(/Por definir/)).toBeNull()
   })
 })

@@ -29,11 +29,11 @@ function buy(c: Character, branch: BranchId, choices: Choice[]): Character {
 }
 
 describe('estructura del árbol', () => {
-  it('hay 9 ramas: 30 nodos las de stat y Categoría, 28 la de Héroe', () => {
+  it('hay 9 ramas de 30 nodos; en Héroe, 2 son espacios por definir y 28 son los que ya tienen contenido', () => {
     expect(BRANCHES).toHaveLength(9)
-    expect(branchNodes('fuerza')).toHaveLength(30)
-    expect(branchNodes('categoria')).toHaveLength(30)
-    expect(branchNodes('heroe')).toHaveLength(28)
+    for (const b of BRANCHES) expect(branchNodes(b)).toHaveLength(30)
+    expect(branchNodes('heroe').filter((n) => !n.empty)).toHaveLength(28)
+    expect(branchNodes('fuerza').some((n) => n.empty)).toBe(false)
   })
 
   it('los costos suman 14, 24 y 34 BP por etapa', () => {
@@ -60,7 +60,7 @@ describe('estructura del árbol', () => {
 
   it('un id de nodo se puede volver a buscar', () => {
     expect(findNode('fuerza:1:1')?.cost).toBe(1)
-    expect(findNode('heroe:3:4')).toBeUndefined()
+    expect(findNode('heroe:3:4')).toMatchObject({ empty: true, cost: 5 }) // espacio por definir
     expect(findNode('nada:1:1')).toBeUndefined()
   })
 })
@@ -334,5 +334,90 @@ describe('dote o habilidad pendiente', () => {
     expect(branchState(treeOf(c), 'fuerza')[4].pending).toBe(true)
     c = { ...c, tree: { ...treeOf(c), gates: { stage2: true, stage3: false } } }
     expect(branchState(treeOf(c), 'fuerza').find((n) => n.node.stage === 2)?.status).toBe('disponible')
+  })
+})
+
+describe('espacios por definir del árbol', () => {
+  const emptyIds = (branch: Parameters<typeof branchNodes>[0]) =>
+    branchNodes(branch)
+      .filter((n) => n.empty)
+      .map((n) => n.id)
+  const open = (bp = 500): Character => ({ ...withBp(bp), tree: { ...emptyTree(), bp, gates: { stage2: true, stage3: true } } })
+
+  it('en Héroe son los nodos 5 y 10 de la etapa 3, y cuestan 5 BP como esa posición', () => {
+    expect(emptyIds('heroe')).toEqual(['heroe:3:4', 'heroe:3:9'])
+    expect(branchNodes('heroe').filter((n) => n.empty).map((n) => n.cost)).toEqual([5, 5])
+    expect(emptyIds('fuerza')).toEqual([])
+  })
+
+  it('se pueden saltear: no frenan a los nodos de abajo, igual que un dote pendiente', () => {
+    let c = open()
+    for (const node of branchNodes('heroe').filter((n) => n.stage < 3)) c = purchaseNode(c, node.id, node.options[0])
+    c = buy(c, 'heroe', ['stat', 'stat', 'stat', 'stat'])
+    const state = branchState(treeOf(c), 'heroe')
+    expect(state.find((n) => n.node.id === 'heroe:3:4')?.status).toBe('disponible') // el espacio 5
+    expect(state.find((n) => n.node.id === 'heroe:3:5')?.status).toBe('disponible') // el 6 se puede comprar sin el 5
+    c = purchaseNode(c, 'heroe:3:5', 'stat')
+    expect(branchState(treeOf(c), 'heroe').find((n) => n.node.id === 'heroe:3:4')?.pending).toBe(true)
+  })
+
+  it('también se pueden comprar: descuentan los BP y no tienen efecto automático', () => {
+    let c = open(100)
+    for (const node of branchNodes('heroe').filter((n) => n.stage < 3)) c = purchaseNode(c, node.id, node.options[0])
+    c = buy(c, 'heroe', ['stat', 'stat', 'stat', 'stat'])
+    const before = { sources: c.sources, energy: c.energy, bp: treeOf(c).bp }
+    const bought = purchaseNode(c, 'heroe:3:4', 'hab', { note: 'Lo que decida el GM' })
+    expect(treeOf(bought).bp).toBe(before.bp - 5)
+    expect(treeOf(bought).purchases.at(-1)).toMatchObject({ nodeId: 'heroe:3:4', choice: 'hab', note: 'Lo que decida el GM', cost: 5 })
+    expect(bought.sources).toEqual(before.sources) // ningún stat cambia solo
+    expect(bought.energy).toEqual(before.energy)
+    expect(branchState(treeOf(bought), 'heroe').find((n) => n.node.id === 'heroe:3:4')?.status).toBe('comprado')
+  })
+
+  it('se puede comprar sin anotar nada, y se puede deshacer', () => {
+    let c = open()
+    for (const node of branchNodes('heroe').filter((n) => n.stage < 3)) c = purchaseNode(c, node.id, node.options[0])
+    c = buy(c, 'heroe', ['stat', 'stat', 'stat', 'stat'])
+    const bought = purchaseNode(c, 'heroe:3:4', 'hab')
+    expect(treeOf(bought).purchases.at(-1)?.note).toBe('')
+    const undone = undoLastPurchase(bought, 'heroe')
+    expect(treeOf(undone).bp).toBe(treeOf(c).bp)
+    expect(treeOf(undone).purchases).toHaveLength(treeOf(c).purchases.length)
+  })
+
+  it('no hay otra opción que anotarlo: no ofrecen stat, energía ni MH', () => {
+    const node = findNode('heroe:3:4')!
+    expect(node.options).toEqual(['hab'])
+    expect(() => purchaseNode(open(), 'heroe:3:4', 'stat')).toThrow()
+  })
+
+  it('la rama se completa sin comprarlos (son opcionales), y también si se compran', () => {
+    const required = (c: Character) => {
+      let x = c
+      for (const node of branchNodes('heroe').filter((n) => !n.empty)) x = purchaseNode(x, node.id, node.options[0])
+      return x
+    }
+    const without = required(open())
+    expect(completedBranches(treeOf(without))).toContain('heroe')
+    expect(treeOf(without).purchases).toHaveLength(28)
+
+    const withBoth = purchaseNode(purchaseNode(without, 'heroe:3:4', 'hab'), 'heroe:3:9', 'hab')
+    expect(completedBranches(treeOf(withBoth))).toContain('heroe')
+    expect(treeOf(withBoth).purchases).toHaveLength(30)
+  })
+
+  it('el costo de la etapa 3 de Héroe: 24 BP sin los espacios por definir y 34 con ellos', () => {
+    const stage3 = branchNodes('heroe').filter((n) => n.stage === 3)
+    expect(stage3.reduce((s, n) => s + n.cost, 0)).toBe(34)
+    expect(stage3.filter((n) => !n.empty).reduce((s, n) => s + n.cost, 0)).toBe(24)
+  })
+
+  it('al definirlos más adelante (con un nombre) siguen siendo los mismos nodos y conservan lo comprado', () => {
+    // un espacio comprado se guarda con su id, que no cambia cuando pasa a tener nombre
+    let c = open()
+    for (const node of branchNodes('heroe').filter((n) => n.stage < 3)) c = purchaseNode(c, node.id, node.options[0])
+    c = purchaseNode(buy(c, 'heroe', ['stat', 'stat', 'stat', 'stat']), 'heroe:3:4', 'hab')
+    expect(treeOf(c).purchases.at(-1)?.nodeId).toBe('heroe:3:4')
+    expect(findNode('heroe:3:4')?.options).toContain('hab') // una habilidad que solo se anota: sigue siendo válida
   })
 })

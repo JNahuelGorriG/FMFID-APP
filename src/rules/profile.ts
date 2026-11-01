@@ -31,8 +31,10 @@ export interface Profile {
   damageParts: Record<AttackType, { base: number; weapon: number }>
   /** El arma que cuenta: equipada o de referencia. null si no usa arma. */
   weapon: { label: string; equipped: boolean } | null
-  /** Potenciaciones naturales (Escencia, Kyushu...), que se pueden sumar al daño. */
+  /** Potenciaciones naturales (Esencia, Aetherium...), que se pueden sumar al daño. */
   techniques: Techniques
+  /** Qué porcentaje (0 a 100) del aumento de Aetherium Ascendance sigue valiendo. */
+  ascendancePercent: number
   defense: Record<AttackType, { ca: number; sa: number }>
   armor: ArmorState | null
   health: string
@@ -82,6 +84,7 @@ export function buildProfile(participant: Participant, character?: Character): P
           ? { label: 'arma de referencia', equipped: false }
           : null,
       techniques: view.natural.derived.techniques,
+      ascendancePercent: participant.pc.ascendancePercent ?? 100,
       defense: {
         fisico: { ca: d.physDefenseCA, sa: d.physDefenseSA },
         magico: { ca: d.magicDefenseCA, sa: d.magicDefenseSA },
@@ -118,6 +121,7 @@ export function buildProfile(participant: Participant, character?: Character): P
       damageParts: parts,
       weapon: weapon ? { label: weaponLabel(weapon), equipped: true } : { label: 'arma de referencia', equipped: false },
       techniques: view.natural.techniques,
+      ascendancePercent: n.ascendancePercent ?? 100,
       defense: {
         fisico: { ca: s.physDefenseCA, sa: s.physDefenseSA },
         magico: { ca: s.magicDefenseCA, sa: s.magicDefenseSA },

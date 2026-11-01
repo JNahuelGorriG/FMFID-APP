@@ -87,6 +87,8 @@ export interface PcState {
   weapon: WeaponState | null
   /** Límite de los buffs. */
   statCaps: StatCaps
+  /** Qué porcentaje (0 a 100) del aumento de Aetherium Ascendance sigue valiendo. Sin dato, 100. */
+  ascendancePercent?: number
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
 }
@@ -119,6 +121,8 @@ export interface NpcParticipantState {
   weapon: WeaponState | null
   /** Límite de los buffs. */
   statCaps: StatCaps
+  /** Qué porcentaje (0 a 100) del aumento de Aetherium Ascendance sigue valiendo. Sin dato, 100. */
+  ascendancePercent?: number
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
 }

@@ -3,11 +3,9 @@ import { useState } from 'react'
 import { diffPaths, setIn } from '../db'
 import {
   STAT_NAMES,
-  addAwakening,
   characterSheet,
   referenceArmorBonus,
   referenceWeaponBonus,
-  setAwakening,
   validateCharacter,
 } from '../rules'
 import type {
@@ -20,6 +18,7 @@ import type {
   WeaponSize,
 } from '../rules'
 import { CheckField, NumberField, SelectField, TextField } from './fields'
+import { StatPointsFields } from './StatPointsCard'
 import { repo } from './data'
 import {
   ENERGY_LABELS,
@@ -70,7 +69,6 @@ function EditForm({
   const [draft, setDraft] = useState<Character>(original)
   const [reason, setReason] = useState('')
   const [errors, setErrors] = useState<string[]>([])
-  const [awakening, setAwakeningAmount] = useState(0)
 
   const set = (path: string, value: unknown) => setDraft((d) => setIn(d, path, value, true))
   const changes = diffPaths(original, draft)
@@ -149,20 +147,12 @@ function EditForm({
         </div>
       </Section>
 
-      <Section title="Despertar de todos los stats">
+      <Section title="Subir puntos de Stats">
         <p className="muted small">
-          El despertar es el mismo monto para los 7 stats. Aquí lo cambias en todos a la vez en el borrador: se guarda
-          con "Guardar cambios", junto con el motivo.
+          Sube mérito, despertar, regalo u otros a los stats que elijas. Cambia el borrador: se guarda con "Guardar
+          cambios", junto con el motivo.
         </p>
-        <NumberField label="Cantidad de despertar (todos los stats)" value={awakening} onChange={setAwakeningAmount} />
-        <div className="actions">
-          <button className="btn secondary compact" onClick={() => setDraft((d) => addAwakening(d, awakening))}>
-            Sumar a los 7 stats
-          </button>
-          <button className="btn secondary compact" onClick={() => setDraft((d) => setAwakening(d, awakening))}>
-            Poner en los 7 stats
-          </button>
-        </div>
+        <StatPointsFields character={draft} onApply={(next) => setDraft(next)} />
       </Section>
 
       <h2>Stats</h2>

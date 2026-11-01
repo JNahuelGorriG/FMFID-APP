@@ -30,7 +30,11 @@ const COSTS: Record<Stage, readonly number[]> = {
   3: [2, 3, 3, 4, 5, 2, 3, 3, 4, 5],
 }
 
-/** Habilidades fijas de la rama Héroe en los nodos "especiales" (etapa, posición). Vacío = no hay nodo. */
+/**
+ * Habilidades fijas de la rama Héroe en los nodos "especiales" (etapa, posición).
+ * `null` es un espacio por definir: se puede comprar (queda anotado, sin efecto automático) o saltear, y no
+ * frena a los demás. Para definirlo, se reemplaza el `null` por el nombre de la habilidad.
+ */
 const HEROE_SKILLS: Record<Stage, Record<number, string | null>> = {
   1: { 4: 'Analizar Armamento', 9: 'Mapa' },
   2: { 4: 'Análisis Heroico', 9: 'Conexión Mental 1' },
@@ -52,13 +56,15 @@ export interface NodeDef {
   mh: number
   /** Nombre fijo (habilidades de Héroe). */
   label: string | null
+  /** Espacio por definir: se puede comprar o saltear, y no cuenta para completar la rama. */
+  empty: boolean
 }
 
 export const nodeId = (branch: BranchId, stage: Stage, index: number): string => `${branch}:${stage}:${index}`
 
 function buildNode(branch: BranchId, stage: Stage, index: number): NodeDef | null {
   const pattern = PATTERN[index]
-  const base = { id: nodeId(branch, stage, index), branch, stage, index, cost: COSTS[stage][index], label: null }
+  const base = { id: nodeId(branch, stage, index), branch, stage, index, cost: COSTS[stage][index], label: null, empty: false }
 
   switch (pattern) {
     case 'stat':
@@ -71,10 +77,8 @@ function buildNode(branch: BranchId, stage: Stage, index: number): NodeDef | nul
       return { ...base, options: ['mh', 'stat'], points: 4, energy: 0, mh: 2 }
     case 'especial': {
       if (branch === 'heroe') {
-        const label = HEROE_SKILLS[stage][index]
-        return label === null || label === undefined
-          ? null
-          : { ...base, options: ['hab'], points: 0, energy: 0, mh: 0, label }
+        const label = HEROE_SKILLS[stage][index] ?? null
+        return { ...base, options: ['hab'], points: 0, energy: 0, mh: 0, label, empty: label === null }
       }
       if (branch === 'categoria') return { ...base, options: ['dote'], points: 0, energy: 0, mh: 0, label: 'Dote único' }
       return { ...base, options: ['dote', 'hab'], points: 0, energy: 0, mh: 0 }
@@ -245,9 +249,12 @@ export interface NodeState {
   pending: boolean
 }
 
-/** Los nodos de "Dote o Hab" se pueden dejar para después: no frenan a los de abajo. */
+/**
+ * Los nodos de "Dote o Hab" se pueden dejar para después y los espacios por definir se pueden saltear: ninguno
+ * frena a los de abajo.
+ */
 export function isDeferrable(node: NodeDef): boolean {
-  return node.options.includes('dote') && node.options.includes('hab')
+  return node.empty || (node.options.includes('dote') && node.options.includes('hab'))
 }
 
 /**
@@ -290,9 +297,9 @@ export function branchState(tree: CharacterTree, branch: BranchId): NodeState[] 
   })
 }
 
-/** Ramas con las 3 etapas completas. */
+/** Ramas con las 3 etapas completas (los espacios por definir son opcionales y no cuentan). */
 export function completedBranches(tree: CharacterTree): BranchId[] {
-  return BRANCHES.filter((b) => branchState(tree, b).every((n) => n.status === 'comprado'))
+  return BRANCHES.filter((b) => branchState(tree, b).every((n) => n.status === 'comprado' || n.node.empty))
 }
 
 /** Ramas con las etapas 1 y 2 completas, o solo la 1. Sirve para ver cuánto falta para una compuerta. */
@@ -300,7 +307,7 @@ export function branchesWithStagesDone(tree: CharacterTree, upTo: Stage): Branch
   return BRANCHES.filter((b) =>
     branchState(tree, b)
       .filter((n) => n.node.stage <= upTo)
-      .every((n) => n.status === 'comprado'),
+      .every((n) => n.status === 'comprado' || n.node.empty),
   )
 }
 

@@ -17,12 +17,13 @@ import type { BranchId, Character, Choice, NodeDef, NodeState } from '../rules'
 import { repo } from './data'
 import { NumberField, SelectField, TextAreaField, TextField } from './fields'
 import { STAT_LABELS, fmt } from './format'
-import { AwakeningCard } from './AwakeningCard'
 import { CollapseAll, Section } from './Section'
+import { StatPointsCard } from './StatPointsCard'
 
 const BRANCH_LABELS: Record<BranchId, string> = { ...STAT_LABELS, heroe: 'Héroe', categoria: 'Categoría' }
 
 function nodeTitle(node: NodeDef): string {
+  if (node.empty) return 'Por definir'
   if (node.label) return node.label
   if (node.options.includes('dote') && node.options.includes('hab')) return 'Dote o Hab'
   if (node.options.includes('energia')) return `${node.energy} E. // ${node.points} P. Stat`
@@ -45,7 +46,7 @@ function choiceText(node: NodeDef, choice: Choice): string {
     case 'dote':
       return 'Dote'
     case 'hab':
-      return 'Habilidad'
+      return node.empty ? 'Espacio por definir' : 'Habilidad'
   }
 }
 
@@ -77,7 +78,14 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
   }
 
   const states = branchState(tree, branch)
-  const doneCount = (b: BranchId) => branchState(tree, b).filter((n) => n.status === 'comprado').length
+  /** Avance de una rama: los espacios por definir solo suman al total si se compraron. */
+  const progress = (b: BranchId) => {
+    const all = branchState(tree, b)
+    const done = all.filter((n) => n.status === 'comprado').length
+    const required = all.filter((n) => !n.node.empty).length
+    const optionalBought = all.filter((n) => n.node.empty && n.status === 'comprado').length
+    return `${done}/${required + optionalBought}`
+  }
 
   async function saveBalances() {
     await persist({ ...character, tree: { ...tree, bp, mh } }, 'Árbol: ajuste de saldo')
@@ -152,8 +160,6 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
         </p>
       </Section>
 
-      <AwakeningCard character={character} />
-
       <Section title="Compuertas">
         {([2, 3] as const).map((stage) => {
           const key = stage === 2 ? 'stage2' : 'stage3'
@@ -186,7 +192,7 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
               setOpen(null)
             }}
           >
-            {BRANCH_LABELS[b]} {doneCount(b)}/{branchState(tree, b).length}
+            {BRANCH_LABELS[b]} {progress(b)}
           </button>
         ))}
       </nav>
@@ -246,6 +252,8 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
           </button>
         )}
       </Section>
+
+      <StatPointsCard character={character} />
 
       <Section title={`Diferencias con las compras (${diffs.length})`} defaultOpen={false}>
         {tree.purchases.length === 0 ? (
@@ -315,11 +323,14 @@ function NodeCard({
       <div className="head">
         <span className="grow">
           <strong>{node.index + 1}. {nodeTitle(node)}</strong>
-          <span className="muted small block">{node.cost} BP</span>
+          <span className="muted small block">
+            {node.cost} BP{node.empty ? ' · opcional: se puede comprar o saltear' : ''}
+          </span>
         </span>
         {status === 'comprado' && <span className="chip">Comprado</span>}
         {status === 'disponible' && !pending && <span className="chip off">Disponible</span>}
-        {pending && <span className="chip off">Pendiente</span>}
+        {pending && !node.empty && <span className="chip off">Pendiente</span>}
+        {node.empty && status !== 'comprado' && status !== 'bloqueado' && <span className="chip off">Opcional</span>}
         {status === 'bloqueado' && <span className="chip off">Bloqueado</span>}
       </div>
 
@@ -349,10 +360,16 @@ function NodeCard({
               {(choice === 'dote' || choice === 'hab') && (
                 <>
                   <TextField
-                    label={choice === 'dote' ? 'Nombre de la dote (opcional)' : 'Nombre de la habilidad (opcional)'}
+                    label={
+                      node.empty
+                        ? 'Qué da este espacio (opcional)'
+                        : choice === 'dote'
+                          ? 'Nombre de la dote (opcional)'
+                          : 'Nombre de la habilidad (opcional)'
+                    }
                     value={note}
                     onChange={setNote}
-                    placeholder="Se puede dejar en blanco y elegir después"
+                    placeholder={node.empty ? 'Se puede dejar en blanco y anotar después' : 'Se puede dejar en blanco y elegir después'}
                   />
                   {choice === 'dote' && (
                     <TextAreaField label="Descripción (opcional)" value={description} onChange={setDescription} />

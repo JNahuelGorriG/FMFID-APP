@@ -9,16 +9,14 @@ interface Props {
   prefix: string
   selected: EffectTarget[]
   onChange: (next: EffectTarget[]) => void
+  /** Qué opciones se ofrecen. Por defecto, los stats y los derivados. */
+  targets?: readonly EffectTarget[]
 }
 
 /** Casillas para elegir uno o varios stats (y ataque, magia o defensas) sobre los que actúa un efecto. */
-export function TargetPicker({ label, prefix, selected, onChange }: Props) {
+export function TargetPicker({ label, prefix, selected, onChange, targets = PICKABLE_TARGETS }: Props) {
   const toggle = (target: EffectTarget, on: boolean) =>
-    onChange(
-      on
-        ? PICKABLE_TARGETS.filter((t) => selected.includes(t) || t === target)
-        : selected.filter((t) => t !== target),
-    )
+    onChange(on ? targets.filter((t) => selected.includes(t) || t === target) : selected.filter((t) => t !== target))
 
   return (
     <div className="targets" role="group" aria-label={label}>
@@ -32,7 +30,7 @@ export function TargetPicker({ label, prefix, selected, onChange }: Props) {
         </button>
       </div>
       <div className="target-grid">
-        {PICKABLE_TARGETS.map((t) => (
+        {targets.map((t) => (
           <label key={t} className="check">
             <input
               type="checkbox"
