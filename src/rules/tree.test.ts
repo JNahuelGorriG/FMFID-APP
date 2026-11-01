@@ -14,6 +14,7 @@ import {
   findNode,
   orientation,
   purchaseNext,
+  statDoteCount,
   statTotal,
   treeOf,
   undoLastPurchase,
@@ -419,5 +420,32 @@ describe('espacios por definir del árbol', () => {
     c = purchaseNode(buy(c, 'heroe', ['stat', 'stat', 'stat', 'stat']), 'heroe:3:4', 'hab')
     expect(treeOf(c).purchases.at(-1)?.nodeId).toBe('heroe:3:4')
     expect(findNode('heroe:3:4')?.options).toContain('hab') // una habilidad que solo se anota: sigue siendo válida
+  })
+})
+
+describe('dotes del catálogo en el árbol', () => {
+  const upToDote = (): Character => buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat'])
+
+  it('una dote elegida del catálogo guarda a cuál corresponde', () => {
+    const c = purchaseNode(upToDote(), 'fuerza:1:4', 'dote', { note: 'Piña limpia', description: '+1 al d20 de impacto', catalogId: 'abc' })
+    expect(treeOf(c).dotes).toEqual([
+      { id: 'fuerza:1:4', name: 'Piña limpia', description: '+1 al d20 de impacto', nodeId: 'fuerza:1:4', catalogId: 'abc' },
+    ])
+  })
+
+  it('una dote escrita a mano no lleva catalogId', () => {
+    const c = purchaseNode(upToDote(), 'fuerza:1:4', 'dote', { note: 'A mano' })
+    expect('catalogId' in treeOf(c).dotes[0]).toBe(false)
+  })
+
+  it('cuenta las dotes de stat para la escalera, y no las únicas de Categoría', () => {
+    expect(statDoteCount(treeOf(upToDote()))).toBe(0)
+    let c = purchaseNode(upToDote(), 'fuerza:1:4', 'dote')
+    expect(statDoteCount(treeOf(c))).toBe(1)
+    c = purchaseNode(buy(c, 'categoria', ['stat', 'stat', 'stat', 'stat']), 'categoria:1:4', 'dote')
+    expect(statDoteCount(treeOf(c))).toBe(1) // la única no cuenta
+    // una habilidad en lugar de dote tampoco cuenta
+    const hab = purchaseNode(upToDote(), 'fuerza:1:4', 'hab')
+    expect(statDoteCount(treeOf(hab))).toBe(0)
   })
 })

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CharactersScreen } from './ui/CharactersScreen'
 import { CombatScreen } from './ui/CombatScreen'
 import { CombatsScreen } from './ui/CombatsScreen'
+import { DotesScreen } from './ui/DotesScreen'
 import { ParticipantScreen } from './ui/ParticipantScreen'
 import { EditScreen } from './ui/EditScreen'
 import { MoreScreen } from './ui/MoreScreen'
@@ -12,12 +13,13 @@ import { SheetScreen } from './ui/SheetScreen'
 import { TablesScreen } from './ui/TablesScreen'
 import { TreeScreen } from './ui/TreeScreen'
 
-type Tab = 'personajes' | 'combate' | 'npcs' | 'mas'
+type Tab = 'personajes' | 'combate' | 'npcs' | 'dotes' | 'mas'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'personajes', label: 'Personajes', icon: '👥' },
   { id: 'combate', label: 'Combate', icon: '⚔️' },
   { id: 'npcs', label: 'NPCs', icon: '👤' },
+  { id: 'dotes', label: 'Dotes', icon: '📜' },
   { id: 'mas', label: 'Más', icon: '⋯' },
 ]
 
@@ -136,6 +138,8 @@ export default function App() {
               onGoMore={() => goTo('mas')}
             />
           ))}
+        {tab === 'dotes' && <DotesScreen />}
+
         {tab === 'mas' &&
           (showTables ? (
             <TablesScreen onBack={() => setShowTables(false)} />

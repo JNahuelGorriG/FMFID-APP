@@ -236,3 +236,17 @@ export function describeHit(name: string, hit: PcHit): string {
   if (hit.critical) parts.push(`${name} queda en estado crítico`)
   return parts.join(' · ')
 }
+
+import type { DoteType } from '../rules'
+
+/** Cómo se llama cada tipo de dote en pantalla. */
+export const DOTE_TYPE_LABELS: Record<DoteType, string> = {
+  fuerza: 'Fuerza',
+  destreza: 'Destreza',
+  constitucion: 'Constitución',
+  percepcion: 'Percepción',
+  inteligencia: 'Inteligencia',
+  sabiduria: 'Sabiduría',
+  carisma: 'Carisma',
+  unico: 'Dotes únicas',
+}

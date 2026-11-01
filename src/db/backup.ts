@@ -1,9 +1,9 @@
 import type { AppDB, ChangeRecord, Setting } from './db'
 import { migrateCombat, normalizeCombat, normalizeNpc } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
-import type { Character, Combat, Npc } from '../rules'
+import type { CatalogDote, Character, Combat, Npc } from '../rules'
 
-export const BACKUP_VERSION = 8
+export const BACKUP_VERSION = 9
 
 export interface BackupFile {
   app: 'fmfid-app'
@@ -14,15 +14,18 @@ export interface BackupFile {
   npcs: Npc[]
   combats: Combat[]
   settings: Setting[]
+  /** El catálogo de dotes. Los respaldos anteriores no lo traen. */
+  dotes?: CatalogDote[]
 }
 
 export async function exportBackup(db: AppDB): Promise<BackupFile> {
-  const [characters, changes, npcs, combats, settings] = await Promise.all([
+  const [characters, changes, npcs, combats, settings, dotes] = await Promise.all([
     db.characters.toArray(),
     db.changes.toArray(),
     db.npcs.toArray(),
     db.combats.toArray(),
     db.settings.toArray(),
+    db.dotes.toArray(),
   ])
   return {
     app: 'fmfid-app',
@@ -33,10 +36,11 @@ export async function exportBackup(db: AppDB): Promise<BackupFile> {
     npcs,
     combats,
     settings,
+    dotes,
   }
 }
 
-const OPTIONAL_LISTS = ['npcs', 'characterStates', 'combats', 'settings'] as const
+const OPTIONAL_LISTS = ['npcs', 'characterStates', 'combats', 'settings', 'dotes'] as const
 
 function isBackup(data: unknown): data is BackupFile & { characterStates?: LegacyState[] } {
   if (data === null || typeof data !== 'object') return false
@@ -62,19 +66,21 @@ export async function importBackup(db: AppDB, data: unknown): Promise<void> {
   const combats = ((data.combats ?? []) as unknown as LegacyCombat[]).map((c) =>
     normalizeCombat(migrateCombat(c, data.characters, data.characterStates ?? [])),
   )
-  await db.transaction('rw', [db.characters, db.changes, db.npcs, db.combats, db.settings], async () => {
+  await db.transaction('rw', [db.characters, db.changes, db.npcs, db.combats, db.settings, db.dotes], async () => {
     await Promise.all([
       db.characters.clear(),
       db.changes.clear(),
       db.npcs.clear(),
       db.combats.clear(),
       db.settings.clear(),
+      db.dotes.clear(),
     ])
     await db.characters.bulkAdd(data.characters)
     await db.changes.bulkAdd(data.changes)
     await db.npcs.bulkAdd((data.npcs ?? []).map(normalizeNpc))
     await db.combats.bulkAdd(combats)
     await db.settings.bulkAdd(data.settings ?? [])
+    await db.dotes.bulkAdd(data.dotes ?? [])
   })
 }
 

@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { STAT_NAMES, characterSheet, splitEnergy } from '../rules'
-import { repo } from './data'
+import { doteRepo, repo } from './data'
 import { STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue } from './format'
+import { DoteInfo } from './DoteParts'
 import { CollapseAll, Section } from './Section'
 import { StatPointsCard } from './StatPointsCard'
 
@@ -15,6 +16,7 @@ interface Props {
 export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
   const character = useLiveQuery(() => repo.get(id), [id])
   const history = useLiveQuery(() => repo.history(id), [id])
+  const catalog = useLiveQuery(() => doteRepo.list(), [])
 
   if (character === undefined) return <p className="muted">Cargando…</p>
 
@@ -90,6 +92,29 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
           </span>
         </div>
       </div>
+
+      <Section title={`Dotes (${character.tree?.dotes.length ?? 0})`} storageKey="Ficha: dotes">
+        {(character.tree?.dotes.length ?? 0) === 0 ? (
+          <p className="muted small">
+            Todavía no tiene dotes. Se eligen al comprar un nodo "Dote o Hab" del árbol de stats.
+          </p>
+        ) : (
+          <ul className="dotes">
+            {character.tree?.dotes.map((d) => {
+              const linked = d.catalogId ? catalog?.find((x) => x.id === d.catalogId) : undefined
+              return (
+                <li key={d.id} className="dote-row">
+                  {linked ? (
+                    <DoteInfo tier={linked.tier} name={linked.name} use={linked.use} description={linked.description} type={linked.type} />
+                  ) : (
+                    <DoteInfo name={d.name} description={d.description} />
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Section>
 
       <Section title="Stats derivados" defaultOpen={false}>
         <dl className="derived">

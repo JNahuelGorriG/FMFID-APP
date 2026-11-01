@@ -178,6 +178,8 @@ export interface Dote {
   name: string
   description: string
   nodeId: string
+  /** Si viene del catálogo de dotes, cuál es. Sin esto, se escribió a mano. */
+  catalogId?: string
 }
 
 export interface CharacterTree {
@@ -343,6 +345,8 @@ export interface PurchaseOptions {
   note?: string
   /** Descripción de la dote (opcional). */
   description?: string
+  /** La dote elegida del catálogo, si se eligió una. */
+  catalogId?: string
   now?: string
 }
 
@@ -382,7 +386,13 @@ export function purchaseNode(
     choice === 'dote'
       ? [
           ...tree.dotes,
-          { id: node.id, name: purchase.note, description: options.description?.trim() ?? '', nodeId: node.id },
+          {
+            id: node.id,
+            name: purchase.note,
+            description: options.description?.trim() ?? '',
+            nodeId: node.id,
+            ...(options.catalogId ? { catalogId: options.catalogId } : {}),
+          },
         ]
       : tree.dotes
 
@@ -457,4 +467,12 @@ export function appliedTotals(tree: CharacterTree): {
     bp += p.cost
   }
   return { arbolHeroe, heroe, categoria, mana, stamina, mh, bp }
+}
+
+/**
+ * Cuántas dotes de stat tiene un jugador: las que cuentan para la escalera de tiers. Las dotes únicas de la
+ * rama Categoría no cuentan.
+ */
+export function statDoteCount(tree: CharacterTree): number {
+  return tree.purchases.filter((p) => p.choice === 'dote' && p.branch !== 'categoria').length
 }

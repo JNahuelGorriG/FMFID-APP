@@ -5,12 +5,16 @@ import type { EffectType, Techniques, TechniqueTarget } from '../rules'
 const EFFECT_TYPES_KEY = 'effectTypes'
 const REFERENCE_SHEETS_KEY = 'referenceSheets'
 const TECHNIQUE_TARGETS_KEY = 'techniqueTargets'
+/** Las hojas de reglas de los dotes van aparte de las del Excel, para que importar el Excel no las pise. */
+const DOTE_SHEETS_KEY = 'doteSheets'
 
 /** Una hoja de referencia importada del Excel (por ejemplo los precios), solo para consultar. */
 export interface ReferenceSheet {
   id: string
   title: string
   rows: string[][]
+  /** La primera fila es el encabezado de la tabla. */
+  header?: boolean
 }
 
 export function createSettingsRepository(db: AppDB) {
@@ -35,6 +39,12 @@ export function createSettingsRepository(db: AppDB) {
 
     async saveTechniqueTargets(targets: Record<keyof Techniques, TechniqueTarget>): Promise<void> {
       await db.settings.put({ key: TECHNIQUE_TARGETS_KEY, value: targets })
+    },
+
+    /** Reglas generales y tablas de los dotes (escalera de tiers, sinergias...), solo para consultar. */
+    async getDoteSheets(): Promise<ReferenceSheet[]> {
+      const row = await db.settings.get(DOTE_SHEETS_KEY)
+      return Array.isArray(row?.value) ? (row.value as ReferenceSheet[]) : []
     },
 
     /** Hojas de referencia importadas (precios, etc.). */
