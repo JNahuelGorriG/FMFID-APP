@@ -4,16 +4,23 @@ import {
   DOTE_TYPES,
   USE_SUGGESTIONS,
   allowedTiers,
+  doteOwners,
   filterDotes,
+  isFreeSlot,
   ladderTier,
   matchDote,
   mergeDotes,
   normalizeDoteName,
+  ownedDotes,
+  slotPlace,
+  sortBySlot,
   sortDotes,
-  useKinds,
+  sortDotesBy,
+  sortOwned,
+  kindsOfUse,
   validateDote,
 } from './index'
-import type { CatalogDote, NewDote } from './index'
+import type { CatalogDote, Dote, NewDote } from './index'
 
 const make = (over: Partial<NewDote> & { name: string }, id = over.name): CatalogDote => ({
   id,
@@ -41,13 +48,13 @@ describe('catálogo de dotes: estructura', () => {
 
 describe('formas de uso', () => {
   it('reconoce pasivas, reacciones, acciones adicionales, batallas y descansos', () => {
-    expect(useKinds('Pasiva')).toEqual(['pasiva'])
-    expect(useKinds('Reacción, 2 por batalla')).toEqual(['reaccion', 'batalla'])
-    expect(useKinds('Acción adicional, 1 por batalla')).toEqual(['accion', 'batalla'])
-    expect(useKinds('2 por descanso largo')).toEqual(['descanso'])
-    expect(useKinds('Pasiva y 2 por descanso largo')).toEqual(['pasiva', 'descanso'])
-    expect(useKinds('Descanso corto')).toEqual(['descanso'])
-    expect(useKinds('lo que sea')).toEqual([])
+    expect(kindsOfUse('Pasiva')).toEqual(['pasiva'])
+    expect(kindsOfUse('Reacción, 2 por batalla')).toEqual(['reaccion', 'batalla'])
+    expect(kindsOfUse('Acción adicional, 1 por batalla')).toEqual(['accion', 'batalla'])
+    expect(kindsOfUse('2 por descanso largo')).toEqual(['descanso'])
+    expect(kindsOfUse('Pasiva y 2 por descanso largo')).toEqual(['pasiva', 'descanso'])
+    expect(kindsOfUse('Descanso corto')).toEqual(['descanso'])
+    expect(kindsOfUse('lo que sea')).toEqual([])
   })
 })
 
@@ -179,5 +186,119 @@ describe('la escalera de tiers', () => {
     expect(allowedTiers(2)).toEqual(['E', 'D', 'C'])
     expect(allowedTiers(5)).toEqual(['E', 'D', 'C', 'B', 'A', 'S'])
     expect(allowedTiers(6)).toEqual(['E']) // vuelve a empezar
+  })
+})
+
+describe('ordenar de varias formas', () => {
+  const list = [
+    make({ name: 'Zeta', type: 'carisma', tier: 'S', use: '2 por descanso largo' }),
+    make({ name: 'Beta', type: 'fuerza', tier: 'D', use: 'Reacción, 2 por batalla' }),
+    make({ name: 'Alfa', type: 'fuerza', tier: 'E', use: 'Pasiva' }),
+    make({ name: 'Gamma', type: 'destreza', tier: 'E', use: '1 por batalla' }),
+    make({ name: 'Delta', type: 'unico', tier: 'C', use: 'Algo raro' }),
+  ]
+  const names = (sort: Parameters<typeof sortDotesBy>[1]) => sortDotesBy(list, sort).map((d) => d.name)
+
+  it('por stat y tier (el de siempre)', () => {
+    expect(names('tipo')).toEqual(['Alfa', 'Beta', 'Gamma', 'Zeta', 'Delta'])
+  })
+
+  it('por tier, de menor a mayor y al revés, desempatando por stat y nombre', () => {
+    expect(names('tier-asc')).toEqual(['Alfa', 'Gamma', 'Beta', 'Delta', 'Zeta'])
+    expect(names('tier-desc')).toEqual(['Zeta', 'Delta', 'Beta', 'Alfa', 'Gamma'])
+  })
+
+  it('por nombre', () => {
+    expect(names('nombre')).toEqual(['Alfa', 'Beta', 'Delta', 'Gamma', 'Zeta'])
+  })
+
+  it('por forma de uso: pasivas, reacciones, de batalla, de descanso y al final las que no tienen forma conocida', () => {
+    expect(names('uso')).toEqual(['Alfa', 'Beta', 'Gamma', 'Zeta', 'Delta'])
+  })
+
+  it('no modifica la lista original', () => {
+    const before = list.map((d) => d.name)
+    sortDotesBy(list, 'nombre')
+    expect(list.map((d) => d.name)).toEqual(before)
+  })
+})
+
+describe('quién tiene cada dote', () => {
+  const catalog = [
+    make({ name: 'Piña limpia', type: 'fuerza' }, 'pina'),
+    make({ name: 'Chispa', type: 'inteligencia' }, 'chispa'),
+    make({ name: 'Bip bip', type: 'destreza' }, 'bip'),
+  ]
+  const owned = (id: string, name: string, nodeId: string, catalogId?: string): Dote => ({ id, name, description: '', nodeId, ...(catalogId ? { catalogId } : {}) })
+  const person = (id: string, name: string, dotes: Dote[]) => ({
+    id,
+    name,
+    playerName: `Jug ${name}`,
+    tree: { bp: 0, mh: 0, gates: { stage2: false, stage3: false }, purchases: [], dotes },
+  })
+  const ed = person('1', 'Edward', [owned('a', 'Piña limpia', 'fuerza:1:4', 'pina'), owned('b', 'chispa (E)', 'inteligencia:1:4'), owned('c', 'Inventada', 'fuerza:1:9')])
+  const roy = person('2', 'Roy', [owned('d', 'Piña limpia', 'fuerza:1:4', 'pina')])
+
+  it('una dote del catálogo, vinculada o escrita igual, se reconoce', () => {
+    expect(ownedDotes(ed, catalog).map((o) => o.catalog?.id ?? null)).toEqual(['pina', 'chispa', null])
+  })
+
+  it('una vinculación a una dote borrada cae en el nombre', () => {
+    const huérfana = person('3', 'X', [owned('e', 'Bip bip', 'destreza:1:4', 'borrada')])
+    expect(ownedDotes(huérfana, catalog)[0].catalog?.id).toBe('bip')
+  })
+
+  it('arma el mapa de quiénes tienen cada una, sin repetir a nadie', () => {
+    const doble = person('1', 'Edward', [...ed.tree.dotes, owned('z', 'Piña limpia', 'fuerza:1:9', 'pina')])
+    const owners = doteOwners(catalog, [doble, roy])
+    expect(owners.get('pina')?.map((o) => o.name)).toEqual(['Edward', 'Roy'])
+    expect(owners.get('chispa')?.map((o) => o.name)).toEqual(['Edward'])
+    expect(owners.has('bip')).toBe(false)
+  })
+
+  it('filtra por jugador y por "nadie"', () => {
+    const owners = doteOwners(catalog, [ed, roy])
+    expect(filterDotes(catalog, { owner: '2' }, owners).map((d) => d.id)).toEqual(['pina'])
+    expect(filterDotes(catalog, { owner: '1' }, owners).map((d) => d.id)).toEqual(['pina', 'chispa'])
+    expect(filterDotes(catalog, { owner: 'nadie' }, owners).map((d) => d.id)).toEqual(['bip'])
+    expect(filterDotes(catalog, { owner: 'todos' }, owners)).toHaveLength(3)
+  })
+
+  it('ordena las dotes de un personaje: por stat, por tier, por nombre o como las compró', () => {
+    const cat = [
+      make({ name: 'Uno', type: 'fuerza', tier: 'D' }, 'u'),
+      make({ name: 'Dos', type: 'fuerza', tier: 'E' }, 'd'),
+      make({ name: 'Tres', type: 'destreza', tier: 'S' }, 't'),
+    ]
+    const p = person('9', 'P', [owned('1', 'Tres', 'destreza:1:4', 't'), owned('2', 'Suelta', 'carisma:1:4'), owned('3', 'Uno', 'fuerza:1:4', 'u'), owned('4', 'Dos', 'fuerza:1:9', 'd')])
+    const name = (o: ReturnType<typeof ownedDotes>[number]) => o.catalog?.name ?? o.owned.name
+    const items = ownedDotes(p, cat)
+    expect(sortOwned(items, 'tipo').map(name)).toEqual(['Dos', 'Uno', 'Tres', 'Suelta'])
+    expect(sortOwned(items, 'tier').map(name)).toEqual(['Dos', 'Uno', 'Tres', 'Suelta']) // la que no está en el catálogo, al final
+    expect(sortOwned(items, 'nombre').map(name)).toEqual(['Dos', 'Suelta', 'Tres', 'Uno'])
+    expect(sortOwned(items, 'compra').map(name)).toEqual(['Tres', 'Suelta', 'Uno', 'Dos'])
+  })
+})
+
+describe('espacios de dote del árbol', () => {
+  const slot = (nodeId: string, over: Partial<Dote> = {}): Dote => ({ id: nodeId, name: '', description: '', nodeId, ...over })
+
+  it('lee de qué rama, etapa y nodo es una dote', () => {
+    expect(slotPlace('fuerza:1:4')).toEqual({ branch: 'fuerza', stage: 1, node: 5 })
+    expect(slotPlace('categoria:3:9')).toEqual({ branch: 'categoria', stage: 3, node: 10 })
+    expect(slotPlace('rama:1:4')).toBeNull()
+    expect(slotPlace('fuerza:x:4')).toBeNull()
+  })
+
+  it('las ordena por rama, etapa y nodo, con las desconocidas al final', () => {
+    const order = sortBySlot([slot('percepcion:2:4'), slot('raro'), slot('fuerza:1:9'), slot('destreza:1:4'), slot('fuerza:1:4'), slot('fuerza:2:4')])
+    expect(order.map((d) => d.nodeId)).toEqual(['fuerza:1:4', 'fuerza:1:9', 'fuerza:2:4', 'destreza:1:4', 'percepcion:2:4', 'raro'])
+  })
+
+  it('un espacio está libre si no tiene dote del catálogo ni nada escrito', () => {
+    expect(isFreeSlot(slot('fuerza:1:4'))).toBe(true)
+    expect(isFreeSlot(slot('fuerza:1:4', { name: '   ' }))).toBe(true)
+    expect(isFreeSlot(slot('fuerza:1:4', { name: 'Algo' }))).toBe(false)
+    expect(isFreeSlot(slot('fuerza:1:4', { catalogId: 'x' }))).toBe(false)
   })
 })

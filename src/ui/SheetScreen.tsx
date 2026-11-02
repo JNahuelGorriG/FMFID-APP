@@ -1,7 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { STAT_NAMES, characterSheet, splitEnergy } from '../rules'
+import { useState } from 'react'
+import { OWNED_SORT_LABELS, STAT_NAMES, characterSheet, ownedDotes, ownedType, sortOwned, splitEnergy } from '../rules'
+import type { OwnedSort } from '../rules'
 import { doteRepo, repo } from './data'
-import { STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue } from './format'
+import { DOTE_TYPE_LABELS, STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue, slotLabel } from './format'
+import { SelectField } from './fields'
 import { DoteInfo } from './DoteParts'
 import { CollapseAll, Section } from './Section'
 import { StatPointsCard } from './StatPointsCard'
@@ -17,6 +20,7 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
   const character = useLiveQuery(() => repo.get(id), [id])
   const history = useLiveQuery(() => repo.history(id), [id])
   const catalog = useLiveQuery(() => doteRepo.list(), [])
+  const [doteSort, setDoteSort] = useState<OwnedSort>('tipo')
 
   if (character === undefined) return <p className="muted">Cargando…</p>
 
@@ -99,20 +103,46 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
             Todavía no tiene dotes. Se eligen al comprar un nodo "Dote o Hab" del árbol de stats.
           </p>
         ) : (
-          <ul className="dotes">
-            {character.tree?.dotes.map((d) => {
-              const linked = d.catalogId ? catalog?.find((x) => x.id === d.catalogId) : undefined
-              return (
-                <li key={d.id} className="dote-row">
-                  {linked ? (
-                    <DoteInfo tier={linked.tier} name={linked.name} use={linked.use} description={linked.description} type={linked.type} />
+          <>
+            <SelectField
+              label="Ordenar las dotes"
+              value={doteSort}
+              options={(Object.keys(OWNED_SORT_LABELS) as OwnedSort[]).map((k) => ({ value: k, label: OWNED_SORT_LABELS[k] }))}
+              onChange={setDoteSort}
+            />
+            {(() => {
+              const items = sortOwned(ownedDotes(character, catalog ?? []), doteSort)
+              const row = (o: (typeof items)[number]) => (
+                <li key={o.owned.id} className="dote-row">
+                  {o.catalog ? (
+                    <DoteInfo tier={o.catalog.tier} name={o.catalog.name} use={o.catalog.use} description={o.catalog.description} type={o.catalog.type} />
                   ) : (
-                    <DoteInfo name={d.name} description={d.description} />
+                    <DoteInfo
+                      name={o.owned.name}
+                      description={o.owned.description}
+                      extra={`Sin vincular al catálogo · ${slotLabel(o.owned.nodeId)}`}
+                    />
                   )}
                 </li>
               )
-            })}
-          </ul>
+              if (doteSort !== 'tipo') return <ul className="dotes">{items.map(row)}</ul>
+              // por stat: un encabezado por tipo, y las que no se reconocen al final
+              const groups = new Map<string, typeof items>()
+              for (const o of items) {
+                const t = ownedType(o)
+                const key = t ? DOTE_TYPE_LABELS[t] : 'Sin tipo'
+                groups.set(key, [...(groups.get(key) ?? []), o])
+              }
+              return Array.from(groups.entries()).map(([name, list]) => (
+                <div key={name}>
+                  <h3 className="slot-title">
+                    {name} ({list.length})
+                  </h3>
+                  <ul className="dotes">{list.map(row)}</ul>
+                </div>
+              ))
+            })()}
+          </>
         )}
       </Section>
 

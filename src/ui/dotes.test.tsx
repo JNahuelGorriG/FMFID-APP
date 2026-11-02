@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { db } from '../db'
 import { emptyTree, purchaseNext } from '../rules'
-import type { Character, NewDote } from '../rules'
+import type { Character, Dote, NewDote } from '../rules'
 import { edward } from '../rules/fixtures'
 import { doteRepo, repo, settingsRepo } from './data'
 
@@ -186,7 +186,7 @@ describe('pestaña Dotes', () => {
     fireEvent.click(await screen.findByText('Tabla'))
     const table = await screen.findByLabelText('Tabla de dotes')
     const headers = Array.from(table.querySelectorAll('th')).map((h) => h.textContent)
-    expect(headers).toEqual(['Tier', 'Dote', 'Tipo', 'Uso', 'Descripción'])
+    expect(headers).toEqual(['Tier', 'Dote', 'Tipo', 'Uso', 'Descripción', 'La tienen'])
     const rows = Array.from(table.querySelectorAll('tbody tr'))
     expect(rows).toHaveLength(7)
     expect(rows[0].textContent).toContain('Hombre Araña de barrio')
@@ -392,7 +392,9 @@ describe('dotes en el árbol y la ficha', () => {
     fireEvent.click(screen.getByText('Guardar dotes'))
     await waitFor(async () => expect((await ownedDotes())[0]).toMatchObject({ name: 'Placaje de rugby', catalogId: placaje.id }))
 
-    // soltarla del catálogo la deja con el texto que tenía
+    // vinculada, el selector se guarda detrás de "Cambiar dote"; soltarla del catálogo la deja con el texto que tenía
+    expect(screen.queryByLabelText('Dote 1 del catálogo')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Cambiar la dote 1'))
     fireEvent.change(await screen.findByLabelText('Dote 1 del catálogo'), { target: { value: '' } })
     expect((await screen.findByLabelText('Nombre de la dote 1') as HTMLInputElement).value).toBe('Placaje de rugby')
   })
@@ -424,7 +426,8 @@ describe('dotes en el árbol y la ficha', () => {
     render(<App />)
     fireEvent.click(await screen.findByText('Edward'))
     const section = (await screen.findByText('Dotes (2)')).closest('details') as HTMLElement
-    expect(within(section).getByLabelText('Tier E')).toBeTruthy()
+    // el catálogo carga aparte: se espera a que la dote vinculada muestre sus datos
+    await waitFor(() => expect(within(section).getByLabelText('Tier E')).toBeTruthy())
     expect(section.textContent).toContain('Piña limpia')
     expect(section.textContent).toContain('+1 al d20 de impacto en ataques sin armas.') // del catálogo, no el texto viejo
     expect(section.textContent).not.toContain('viejo')
@@ -437,5 +440,349 @@ describe('dotes en el árbol y la ficha', () => {
     render(<App />)
     fireEvent.click(await screen.findByText('Edward'))
     expect(await screen.findByText(/Todavía no tiene dotes/)).toBeTruthy()
+  })
+})
+
+// ───────────────────────── orden, filtro por jugador y vista por jugador
+
+const withDotes = (name: string, dotes: Dote[]) =>
+  repo.create({ ...edwardData, name, playerName: `Jug ${name}`, tree: { ...emptyTree(), dotes } })
+
+const idOf = async (name: string) => (await doteRepo.list()).find((d) => d.name === name)!.id
+
+describe('ordenar y filtrar por jugador', () => {
+  async function setUp() {
+    await seed(catalog)
+    await withDotes('Edward', [
+      { id: 'a', name: 'Piña limpia', description: '', nodeId: 'fuerza:1:4', catalogId: await idOf('Piña limpia') },
+      { id: 'b', name: 'Chispa (E)', description: '', nodeId: 'inteligencia:1:4' }, // a mano: se reconoce por el nombre
+      { id: 'c', name: 'Inventada', description: 'x', nodeId: 'fuerza:1:9' }, // no está en el catálogo
+    ])
+    await withDotes('Roy', [{ id: 'd', name: 'Bip bip', description: '', nodeId: 'destreza:1:4', catalogId: await idOf('Bip bip') }])
+    await openDotes()
+    await screen.findByText('7 dotes')
+  }
+
+  it('cada dote dice quiénes la tienen, aunque se haya escrito a mano', async () => {
+    await setUp()
+    const fuerza = (await screen.findByText('Fuerza (3)')).closest('details') as HTMLElement
+    const pina = within(fuerza).getByLabelText('Editar Piña limpia').closest('li') as HTMLElement
+    expect(pina.textContent).toContain('La tienen: Edward')
+    const inteligencia = screen.getByText('Inteligencia (1)').closest('details') as HTMLElement
+    expect(inteligencia.textContent).toContain('La tienen: Edward') // "Chispa (E)" escrita a mano
+    const destreza = screen.getByText('Destreza (2)').closest('details') as HTMLElement
+    expect(within(destreza).getByLabelText('Editar Bip bip').closest('li')?.textContent).toContain('La tienen: Roy')
+    expect(within(destreza).getByLabelText('Editar Rodar con el golpe').closest('li')?.textContent).not.toContain('La tienen')
+  })
+
+  it('se filtra por jugador y por "dotes que nadie tiene"', async () => {
+    await setUp()
+    const options = Array.from((screen.getByLabelText('Filtrar por jugador') as HTMLSelectElement).options).map((o) => o.text)
+    expect(options).toEqual(['Todos los jugadores', 'Edward (Jug Edward)', 'Roy (Jug Roy)', 'Dotes que nadie tiene'])
+
+    const edward = (await repo.list()).find((c) => c.name === 'Edward')!
+    fireEvent.change(screen.getByLabelText('Filtrar por jugador'), { target: { value: edward.id } })
+    expect(await screen.findByText('2 de 7 dotes')).toBeTruthy()
+    expect(screen.getByLabelText('Editar Piña limpia')).toBeTruthy()
+    expect(screen.getByLabelText('Editar Chispa')).toBeTruthy()
+    expect(screen.queryByLabelText('Editar Bip bip')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Filtrar por jugador'), { target: { value: 'nadie' } })
+    expect(await screen.findByText('4 de 7 dotes')).toBeTruthy()
+    expect(screen.queryByLabelText('Editar Piña limpia')).toBeNull()
+    expect(screen.getByLabelText('Editar Placaje de rugby')).toBeTruthy()
+  })
+
+  it('el filtro de jugador se combina con los demás', async () => {
+    await setUp()
+    const edward = (await repo.list()).find((c) => c.name === 'Edward')!
+    fireEvent.change(screen.getByLabelText('Filtrar por jugador'), { target: { value: edward.id } })
+    fireEvent.change(screen.getByLabelText('Filtrar por tipo'), { target: { value: 'inteligencia' } })
+    expect(await screen.findByText('1 de 7 dotes')).toBeTruthy()
+    expect(screen.getByLabelText('Editar Chispa')).toBeTruthy()
+  })
+
+  it('la vista "Por jugador" agrupa las dotes de cada uno y avisa de las que no están vinculadas', async () => {
+    await setUp()
+    fireEvent.click(screen.getByText('Por jugador'))
+    const edward = (await screen.findByText('Edward (2)')).closest('details') as HTMLElement
+    expect(within(edward).getByLabelText('Editar Piña limpia')).toBeTruthy()
+    expect(within(edward).getByLabelText('Editar Chispa')).toBeTruthy()
+    expect(edward.textContent).toContain('Jugador: Jug Edward')
+    expect(edward.textContent).toContain('1 dote(s) sin vincular con el catálogo')
+    const roy = screen.getByText('Roy (1)').closest('details') as HTMLElement
+    expect(within(roy).getByLabelText('Editar Bip bip')).toBeTruthy()
+    // quien filtra por un jugador ve solo ese
+    fireEvent.change(screen.getByLabelText('Filtrar por jugador'), { target: { value: (await repo.list()).find((c) => c.name === 'Roy')!.id } })
+    await waitFor(() => expect(screen.queryByText('Edward (2)')).toBeNull())
+    expect(screen.getByText('Roy (1)')).toBeTruthy()
+  })
+
+  it('se pueden ordenar por tier, por nombre y por forma de uso', async () => {
+    await setUp()
+    fireEvent.click(screen.getByText('Tabla'))
+    const order = () => Array.from(document.querySelectorAll('[aria-label="Tabla de dotes"] tbody tr')).map((r) => r.querySelector('td.first')?.textContent)
+
+    expect(order()).toEqual(['Hombre Araña de barrio', 'Piña limpia', 'Placaje de rugby', 'Rodar con el golpe', 'Bip bip', 'Chispa', 'Voz de mando'])
+
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'tier-desc' } })
+    await waitFor(() => expect(order()[0]).toBe('Voz de mando'))
+    expect(order().slice(0, 3)).toEqual(['Voz de mando', 'Bip bip', 'Rodar con el golpe'])
+
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'tier-asc' } })
+    await waitFor(() => expect(order()[6]).toBe('Voz de mando'))
+
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'nombre' } })
+    await waitFor(() => expect(order()[0]).toBe('Bip bip'))
+    expect(order()).toEqual(['Bip bip', 'Chispa', 'Hombre Araña de barrio', 'Piña limpia', 'Placaje de rugby', 'Rodar con el golpe', 'Voz de mando'])
+
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'uso' } })
+    // primero las pasivas, después las reacciones, las de batalla y las de descanso
+    await waitFor(() => expect(order()[0]).toBe('Hombre Araña de barrio'))
+    expect(order().slice(-3)).toEqual(['Rodar con el golpe', 'Voz de mando', 'Bip bip'])
+  })
+
+  it('el orden también rige dentro de cada stat', async () => {
+    await setUp()
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'nombre' } })
+    const fuerza = (await screen.findByText('Fuerza (3)')).closest('details') as HTMLElement
+    await waitFor(() =>
+      expect(Array.from(fuerza.querySelectorAll('.dote-head strong')).map((n) => n.textContent)).toEqual([
+        'Hombre Araña de barrio',
+        'Piña limpia',
+        'Placaje de rugby',
+      ]),
+    )
+    fireEvent.change(screen.getByLabelText('Ordenar por'), { target: { value: 'tier-desc' } })
+    await waitFor(() =>
+      expect(Array.from(fuerza.querySelectorAll('.dote-head strong')).map((n) => n.textContent)[0]).toBe('Placaje de rugby'),
+    )
+  })
+})
+
+describe('reglas de los dotes legibles', () => {
+  async function importRules() {
+    await doteRepo.create(dote('Una'))
+    await openDotes()
+    const json = JSON.stringify({
+      app: 'fmfid-app',
+      kind: 'dotes',
+      version: 1,
+      exportedAt: '',
+      dotes: [],
+      sheets: [
+        { id: 'dotes-reglas', title: 'Dotes: reglas generales', header: true, rows: [['Tema', 'Regla'], ['Tope', 'Todas las dotes juntas suman como máximo +3 al d20 y +2 al d8 en una misma tirada.'], ['d12', 'Reemplaza al d20 y vale d12 + 8.']] },
+        { id: 'dotes-escalera', title: 'Dotes: escalera de tiers', header: true, rows: [['Tier', 'Qué hace una dote típica'], ['E', '+1 en una acción concreta'], ['D', '+2 en una acción concreta']] },
+        { id: 'dotes-sinergias', title: 'Dotes: sinergias, cadenas y exclusiones', header: true, rows: [['Tipo', 'Nombre', 'Dotes que participan', 'Efecto'], ['Sinergia', 'Arcoíris', 'Lado oscuro (negra), Enfermero de guardia (blanca)', 'Con 3 dotes de color distintas, cada una pasa de +1 a +2.']] },
+      ],
+    })
+    const file = new File([json], 'reglas.json')
+    file.text = async () => json
+    fireEvent.change(await screen.findByLabelText('Archivo de dotes'), { target: { files: [file] } })
+    await screen.findByText('Dotes: reglas generales')
+  }
+
+  it('se muestran como una lista con el título en negrita y el texto debajo, no como una tabla', async () => {
+    await importRules()
+    const reglas = screen.getByText('Dotes: reglas generales').closest('details') as HTMLElement
+    expect(reglas.querySelector('table')).toBeNull()
+    const rows = Array.from(reglas.querySelectorAll('.rule-row'))
+    expect(rows).toHaveLength(2) // sin la fila de encabezado
+    expect(rows[0].querySelector('.rule-title strong')?.textContent).toBe('Tope')
+    expect(rows[0].querySelector('.rule-text')?.textContent).toContain('+3 al d20 y +2 al d8')
+    // el encabezado "Tema / Regla" no se repite como texto
+    expect(reglas.textContent).not.toContain('Tema')
+  })
+
+  it('la escalera lleva el chip de cada tier', async () => {
+    await importRules()
+    const escalera = screen.getByText('Dotes: escalera de tiers').closest('details') as HTMLElement
+    expect(within(escalera).getByLabelText('Tier E')).toBeTruthy()
+    expect(within(escalera).getByLabelText('Tier D')).toBeTruthy()
+    expect(escalera.textContent).toContain('+1 en una acción concreta')
+  })
+
+  it('las sinergias muestran el tipo y el nombre como título y cada columna con su nombre', async () => {
+    await importRules()
+    const sinergias = screen.getByText('Dotes: sinergias, cadenas y exclusiones').closest('details') as HTMLElement
+    expect(sinergias.querySelector('.rule-title strong')?.textContent).toBe('Sinergia · Arcoíris')
+    const texts = Array.from(sinergias.querySelectorAll('.rule-text')).map((t) => t.textContent)
+    expect(texts[0]).toBe('Dotes que participan: Lado oscuro (negra), Enfermero de guardia (blanca)')
+    expect(texts[1]).toBe('Efecto: Con 3 dotes de color distintas, cada una pasa de +1 a +2.')
+  })
+})
+
+// ───────────────────────── árbol: espacios rotulados, tipo elegible y asignación directa
+
+describe('dotes de un jugador en el árbol', () => {
+  const slot = (nodeId: string, over: Partial<Dote> = {}): Dote => ({ id: nodeId, name: '', description: '', nodeId, ...over })
+
+  async function openTreeWith(dotes: Dote[]) {
+    await repo.create({ ...edwardData, tree: { ...emptyTree(), bp: 50, dotes } })
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Árbol de stats'))
+    await screen.findByText('Árbol de Edward')
+  }
+
+  it('cada caja dice de qué rama, etapa y nodo es, y van en el orden del árbol', async () => {
+    // cargadas en desorden: primero Percepción, después Fuerza y Destreza
+    await openTreeWith([slot('percepcion:2:4'), slot('fuerza:1:9'), slot('destreza:1:4'), slot('fuerza:1:4')])
+    const titles = (await screen.findAllByRole('heading', { level: 3 })).map((h) => h.textContent).filter((t) => t?.startsWith('Dote '))
+    expect(titles).toEqual([
+      'Dote 1 · Fuerza · etapa 1 · nodo 5',
+      'Dote 2 · Fuerza · etapa 1 · nodo 10',
+      'Dote 3 · Destreza · etapa 1 · nodo 5',
+      'Dote 4 · Percepción · etapa 2 · nodo 5',
+    ])
+  })
+
+  it('avisa qué espacios están libres, para no ir caja por caja', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('destreza:1:4'), slot('fuerza:1:4', { name: 'Ya escrita' })])
+    expect((await screen.findByText(/Espacios libres \(1\):/)).parentElement?.textContent).toContain('Destreza · etapa 1 · nodo 5')
+  })
+
+  it('el tipo de dote lo elige quien carga: la rama solo lo sugiere', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4')])
+    const tipo = (await screen.findByLabelText('Dote 1 del catálogo · tipo')) as HTMLSelectElement
+    expect(tipo.value).toBe('fuerza') // sugerido por la rama
+    expect(Array.from(tipo.options).find((o) => o.value === 'fuerza')?.text).toBe('Fuerza (sugerido)')
+    let options = Array.from((screen.getByLabelText('Dote 1 del catálogo') as HTMLSelectElement).options).map((o) => o.text)
+    expect(options.join()).toContain('Piña limpia')
+    expect(options.join()).not.toContain('Bip bip')
+
+    // en un espacio de Fuerza se carga una dote de Destreza
+    fireEvent.change(tipo, { target: { value: 'destreza' } })
+    options = Array.from((screen.getByLabelText('Dote 1 del catálogo') as HTMLSelectElement).options).map((o) => o.text)
+    expect(options.join()).toContain('Bip bip')
+    expect(options.join()).not.toContain('Piña limpia')
+    fireEvent.change(screen.getByLabelText('Dote 1 del catálogo'), { target: { value: await idOf('Bip bip') } })
+    fireEvent.click(screen.getByText('Guardar dotes'))
+    await waitFor(async () => expect((await repo.list())[0].tree?.dotes[0]).toMatchObject({ name: 'Bip bip', catalogId: await idOf('Bip bip') }))
+  })
+
+  it('con "todos los tipos" se ven todas, cada una con su stat', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4')])
+    fireEvent.change(await screen.findByLabelText('Dote 1 del catálogo · tipo'), { target: { value: 'todos' } })
+    const options = Array.from((screen.getByLabelText('Dote 1 del catálogo') as HTMLSelectElement).options).map((o) => o.text)
+    expect(options).toHaveLength(8) // las 7 + "elegir"
+    expect(options.join()).toContain('Voz de mando [Sabiduría]')
+  })
+
+  it('se busca dentro de las dotes por nombre, uso o descripción', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4')])
+    fireEvent.change(await screen.findByLabelText('Dote 1 del catálogo · tipo'), { target: { value: 'todos' } })
+    fireEvent.change(screen.getByLabelText('Dote 1 del catálogo · buscar'), { target: { value: 'huida' } })
+    const options = Array.from((screen.getByLabelText('Dote 1 del catálogo') as HTMLSelectElement).options).map((o) => o.text)
+    expect(options).toHaveLength(2)
+    expect(options[1]).toContain('Bip bip')
+    fireEvent.change(screen.getByLabelText('Dote 1 del catálogo · buscar'), { target: { value: 'zzz' } })
+    expect(await screen.findByText(/Ninguna dote coincide/)).toBeTruthy()
+  })
+
+  it('"Poner una dote en un espacio libre" la manda al espacio de su mismo stat', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4'), slot('destreza:1:4'), slot('inteligencia:1:4')])
+    fireEvent.change(await screen.findByLabelText('Poner una dote en un espacio libre · tipo'), { target: { value: 'destreza' } })
+    fireEvent.change(screen.getByLabelText('Poner una dote en un espacio libre'), { target: { value: await idOf('Bip bip') } })
+    expect(await screen.findByText(/"Bip bip" se puso en el espacio Destreza · etapa 1 · nodo 5\. Falta guardar\./)).toBeTruthy()
+    // la caja de Destreza quedó con la dote, las otras siguen libres
+    expect((await screen.findByLabelText('Dote 2')).textContent).toContain('Bip bip')
+    expect(screen.getByText(/Espacios libres \(2\):/)).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Guardar dotes'))
+    await waitFor(async () => {
+      const saved = (await repo.list())[0].tree?.dotes ?? []
+      expect(saved.find((d) => d.nodeId === 'destreza:1:4')?.name).toBe('Bip bip')
+      expect(saved.find((d) => d.nodeId === 'fuerza:1:4')?.name).toBe('')
+    })
+  })
+
+  it('si no hay un espacio libre de ese stat, usa el primero libre y lo dice', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4'), slot('destreza:1:4', { name: 'Ocupada' })])
+    fireEvent.change(await screen.findByLabelText('Poner una dote en un espacio libre · tipo'), { target: { value: 'inteligencia' } })
+    fireEvent.change(screen.getByLabelText('Poner una dote en un espacio libre'), { target: { value: await idOf('Chispa') } })
+    expect(await screen.findByText(/"Chispa" se puso en el espacio Fuerza · etapa 1 · nodo 5 \(no había uno libre de su stat\)/)).toBeTruthy()
+  })
+
+  it('sin espacios libres no ofrece el selector rápido', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4', { name: 'Escrita' })])
+    await screen.findByLabelText('Nombre de la dote 1')
+    expect(screen.queryByLabelText('Poner una dote en un espacio libre')).toBeNull()
+    expect(screen.queryByText(/Espacios libres/)).toBeNull()
+  })
+
+  it('una dote ya vinculada se muestra completa y el selector está cerrado hasta tocar "Cambiar dote"', async () => {
+    await seed(catalog)
+    await openTreeWith([slot('fuerza:1:4', { name: 'Piña limpia', catalogId: await idOf('Piña limpia') })])
+    expect((await screen.findByLabelText('Dote 1')).textContent).toContain('Piña limpia')
+    expect(screen.queryByLabelText('Dote 1 del catálogo')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Cambiar la dote 1'))
+    expect(await screen.findByLabelText('Dote 1 del catálogo')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Cerrar el selector de la dote 1'))
+    await waitFor(() => expect(screen.queryByLabelText('Dote 1 del catálogo')).toBeNull())
+  })
+
+  it('al comprar una dote también se puede cambiar el tipo sugerido', async () => {
+    await seed(catalog)
+    let c: Character = { ...edward, tree: { ...emptyTree(), bp: 100 } }
+    for (let i = 0; i < 4; i++) c = purchaseNext(c, 'fuerza', 'stat')
+    const { id: _a, createdAt: _b, updatedAt: _d, ...data } = c
+    await repo.create(data)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    fireEvent.click(await screen.findByText('Árbol de stats'))
+    await screen.findByText('Árbol de Edward')
+    fireEvent.click(within(Array.from(document.querySelectorAll<HTMLElement>('.card.node'))[4]).getByText('Comprar'))
+    fireEvent.change(await screen.findByLabelText('Elección del nodo 5'), { target: { value: 'dote' } })
+    fireEvent.change(await screen.findByLabelText('Dote del catálogo · tipo'), { target: { value: 'destreza' } })
+    // con una escalera en tier E solo se ofrecen las de ese tier, y se pueden mostrar todas
+    expect(Array.from((screen.getByLabelText('Dote del catálogo') as HTMLSelectElement).options).map((o) => o.text).join()).not.toContain('Bip bip')
+    fireEvent.click(screen.getByLabelText('Mostrar las dotes de todos los tiers'))
+    fireEvent.change(screen.getByLabelText('Dote del catálogo'), { target: { value: await idOf('Bip bip') } })
+    fireEvent.click(screen.getByText('Confirmar compra'))
+    await waitFor(async () => expect((await repo.list())[0].tree?.dotes[0]).toMatchObject({ name: 'Bip bip', nodeId: 'fuerza:1:4' }))
+  })
+})
+
+describe('dotes en la ficha: orden', () => {
+  it('se agrupan por stat y se pueden ordenar de otras formas', async () => {
+    await seed(catalog)
+    await withDotes('Edward', [
+      { id: 'a', name: 'Voz de mando', description: '', nodeId: 'sabiduria:1:4', catalogId: await idOf('Voz de mando') },
+      { id: 'b', name: 'Placaje de rugby', description: '', nodeId: 'fuerza:1:9', catalogId: await idOf('Placaje de rugby') },
+      { id: 'c', name: 'Bip bip', description: '', nodeId: 'destreza:1:4', catalogId: await idOf('Bip bip') },
+      { id: 'd', name: 'Piña limpia', description: '', nodeId: 'fuerza:1:4', catalogId: await idOf('Piña limpia') },
+      { id: 'e', name: 'Mía', description: 'a mano', nodeId: 'carisma:1:4' },
+    ])
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    const section = (await screen.findByText('Dotes (5)')).closest('details') as HTMLElement
+    const names = () => Array.from(section.querySelectorAll('.dote-head strong')).map((n) => n.textContent)
+    const groups = () => Array.from(section.querySelectorAll('h3.slot-title')).map((h) => h.textContent)
+
+    // por stat y tier, con un encabezado por stat (el catálogo carga aparte: se espera a que ordene por tier)
+    await waitFor(() => expect(names()).toEqual(['Piña limpia', 'Placaje de rugby', 'Bip bip', 'Voz de mando', 'Mía']))
+    expect(groups()).toEqual(['Fuerza (2)', 'Destreza (1)', 'Sabiduría (1)', 'Carisma (1)'])
+
+    fireEvent.change(within(section).getByLabelText('Ordenar las dotes'), { target: { value: 'tier' } })
+    await waitFor(() => expect(groups()).toEqual([]))
+    expect(names()).toEqual(['Piña limpia', 'Placaje de rugby', 'Bip bip', 'Voz de mando', 'Mía']) // las que no están en el catálogo, al final
+
+    fireEvent.change(within(section).getByLabelText('Ordenar las dotes'), { target: { value: 'nombre' } })
+    await waitFor(() => expect(names()[0]).toBe('Bip bip'))
+    expect(names()).toEqual(['Bip bip', 'Mía', 'Piña limpia', 'Placaje de rugby', 'Voz de mando'])
+
+    fireEvent.change(within(section).getByLabelText('Ordenar las dotes'), { target: { value: 'compra' } })
+    await waitFor(() => expect(names()[0]).toBe('Voz de mando'))
+    expect(names()).toEqual(['Voz de mando', 'Placaje de rugby', 'Bip bip', 'Piña limpia', 'Mía'])
+    // la que no está vinculada dice de qué espacio es
+    expect(section.textContent).toContain('Sin vincular al catálogo · Carisma · etapa 1 · nodo 5')
   })
 })

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { allowedTiers, doteTypeOfBranch, ladderTier, sortDotes } from '../rules'
+import { DOTE_TYPES, allowedTiers, doteTypeOfBranch, ladderTier, sortDotes } from '../rules'
 import type { BranchId, CatalogDote, DoteTier, DoteType } from '../rules'
 import { SelectField } from './fields'
 import { DOTE_TYPE_LABELS } from './format'
@@ -20,12 +20,15 @@ export function DoteInfo({
   use,
   description,
   type,
+  extra,
 }: {
   tier?: DoteTier
   name: string
   use?: string
   description?: string
-  type?: DoteType
+  type?: DoteType | null
+  /** Una línea más debajo del nombre, por ejemplo quiénes la tienen. */
+  extra?: string
 }) {
   return (
     <div className="dote-info">
@@ -34,18 +37,20 @@ export function DoteInfo({
         <strong className="grow">{name || 'Sin nombre'}</strong>
       </div>
       {(type || use) && (
-        <div className="small muted">
-          {[type ? DOTE_TYPE_LABELS[type] : '', use ?? ''].filter(Boolean).join(' · ')}
-        </div>
+        <div className="small muted">{[type ? DOTE_TYPE_LABELS[type] : '', use ?? ''].filter(Boolean).join(' · ')}</div>
       )}
       {description && <p className="small dote-text">{description}</p>}
+      {extra && <div className="small dote-extra">{extra}</div>}
     </div>
   )
 }
 
 interface PickerProps {
-  /** Rama del nodo: decide el tipo de dote y si rige la escalera de tiers. */
-  branch: BranchId | string
+  /**
+   * Rama del nodo. Solo **sugiere** un tipo de dote (la de su stat, o las únicas en Categoría): el tipo se puede
+   * cambiar. Sin rama no se sugiere ninguno y se ven todas.
+   */
+  branch?: BranchId | string
   catalog: CatalogDote[]
   /** Cuántas dotes de stat tiene ya el jugador (para la escalera de tiers). */
   count: number
@@ -56,13 +61,16 @@ interface PickerProps {
   ignoreLadder?: boolean
   /** Muestra la ficha de la dote elegida debajo. */
   showPreview?: boolean
-  /** No avisa cuando no hay dotes de ese tipo en el catálogo. */
+  /** No muestra nada si el catálogo está vacío. */
   quiet?: boolean
+  /** Lo que dice la primera opción (la de no elegir ninguna). */
+  emptyLabel?: string
 }
 
 /**
- * Elige una dote del catálogo para una rama. En las ramas de stat se ofrecen las del tier que toca en la
- * escalera o de uno más bajo (se pueden mostrar todas); en Categoría, las únicas de cualquier tier.
+ * Elige una dote del catálogo. El tipo (stat o única) arranca en el que sugiere la rama pero lo elige quien
+ * carga; se puede buscar por texto. La escalera de tiers ofrece las dotes de stat del tier que toca o de uno más
+ * bajo, y se pueden mostrar todas.
  */
 export function DotePicker({
   branch,
@@ -74,18 +82,47 @@ export function DotePicker({
   ignoreLadder = false,
   showPreview = true,
   quiet = false,
+  emptyLabel = 'Escribir a mano o decidir después',
 }: PickerProps) {
+  const suggested = branch ? doteTypeOfBranch(branch) : null
+  const [type, setType] = useState<DoteType | 'todos'>(suggested ?? 'todos')
+  const [query, setQuery] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const type = doteTypeOfBranch(branch)
-  const ladder = type !== null && type !== 'unico' && !ignoreLadder
-  const allowed = ladder ? allowedTiers(count) : null
 
-  const ofType = sortDotes(catalog.filter((d) => d.type === type))
-  const offered = allowed && !showAll ? ofType.filter((d) => allowed.includes(d.tier) || d.id === value) : ofType
+  if (quiet && catalog.length === 0) return null
+
+  const ladder = !ignoreLadder && type !== 'unico'
+  const allowed = ladder ? allowedTiers(count) : null
+  const text = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const q = text(query).trim()
+
+  const ofType = sortDotes(catalog.filter((d) => type === 'todos' || d.type === type))
+  const matching = q === '' ? ofType : ofType.filter((d) => [d.name, d.use, d.description].some((f) => text(f).includes(q)))
+  const offered =
+    allowed && !showAll ? matching.filter((d) => d.type === 'unico' || allowed.includes(d.tier) || d.id === value) : matching
   const selected = catalog.find((d) => d.id === value) ?? null
 
   return (
     <div>
+      <SelectField
+        label={`${label} · tipo`}
+        value={type}
+        options={[
+          { value: 'todos', label: 'Todos los tipos' },
+          ...DOTE_TYPES.map((t) => ({ value: t, label: `${DOTE_TYPE_LABELS[t]}${t === suggested ? ' (sugerido)' : ''}` })),
+        ]}
+        onChange={(t) => setType(t)}
+      />
+      <label className="field">
+        <span className="small muted">Buscar</span>
+        <input
+          type="search"
+          aria-label={`${label} · buscar`}
+          placeholder="Nombre, uso o descripción…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
       {ladder && ofType.length > 0 && (
         <p className="muted small">
           Con {count} dote(s) de stat, te toca una de tier <strong>{ladderTier(count)}</strong> o inferior. Elegir una más
@@ -93,23 +130,25 @@ export function DotePicker({
         </p>
       )}
       {ofType.length === 0 ? (
-        quiet ? null : (
         <p className="muted small">
-          No hay dotes de {type ? DOTE_TYPE_LABELS[type].toLowerCase() : 'este tipo'} en el catálogo. Escríbela a mano o cárgala en la
-          pestaña Dotes.
+          No hay dotes {type === 'todos' ? '' : `de ${DOTE_TYPE_LABELS[type].toLowerCase()} `}en el catálogo. Escríbela a mano o
+          cárgala en la pestaña Dotes.
         </p>
-        )
       ) : (
         <>
           <SelectField
             label={label}
             value={value}
             options={[
-              { value: '', label: 'Escribir a mano o decidir después' },
-              ...offered.map((d) => ({ value: d.id, label: `${d.tier} · ${d.name} (${d.use || 'sin uso'})` })),
+              { value: '', label: emptyLabel },
+              ...offered.map((d) => ({
+                value: d.id,
+                label: `${d.tier} · ${d.name}${type === 'todos' ? ` [${DOTE_TYPE_LABELS[d.type]}]` : ''} (${d.use || 'sin uso'})`,
+              })),
             ]}
             onChange={(id) => onSelect(catalog.find((d) => d.id === id) ?? null)}
           />
+          {offered.length === 0 && <p className="muted small">Ninguna dote coincide: prueba con otro tipo o con la casilla de todos los tiers.</p>}
           {ladder && (
             <label className="check">
               <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />

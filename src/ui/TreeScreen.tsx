@@ -9,22 +9,20 @@ import {
   appliedTotals,
   branchesWithStagesDone,
   branchState,
-  doteTypeOfNode,
-  matchDote,
   statDoteCount,
   purchaseNode,
   treeOf,
   undoLastPurchase,
 } from '../rules'
-import type { BranchId, CatalogDote, Character, Choice, Dote, NodeDef, NodeState } from '../rules'
+import type { BranchId, CatalogDote, Character, Choice, NodeDef, NodeState } from '../rules'
 import { doteRepo, repo } from './data'
-import { DoteInfo, DotePicker } from './DoteParts'
+import { DotePicker } from './DoteParts'
+import { OwnedDotesCard } from './OwnedDotesCard'
 import { NumberField, SelectField, TextAreaField, TextField } from './fields'
-import { STAT_LABELS, fmt } from './format'
+import { BRANCH_LABELS, STAT_LABELS, fmt } from './format'
 import { CollapseAll, Section } from './Section'
 import { StatPointsCard } from './StatPointsCard'
 
-const BRANCH_LABELS: Record<BranchId, string> = { ...STAT_LABELS, heroe: 'Héroe', categoria: 'Categoría' }
 
 function nodeTitle(node: NodeDef): string {
   if (node.empty) return 'Por definir'
@@ -70,7 +68,6 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
   const [dotes, setDotes] = useState(tree.dotes)
   const catalogQuery = useLiveQuery(() => doteRepo.list(), [])
   const catalog: CatalogDote[] = catalogQuery ?? []
-  const catalogById = new Map(catalog.map((d) => [d.id, d]))
   const doteCount = statDoteCount(tree)
   // Si el árbol cambia desde afuera (una compra, deshacer), los campos de edición se actualizan.
   const [seen, setSeen] = useState(character.tree)
@@ -115,32 +112,6 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'No se pudo deshacer.')
     }
-  }
-
-  /** La dote con los datos de la del catálogo (o suelta del catálogo si se quita la elección). */
-  function withCatalog(d: Dote, picked: CatalogDote | null): Dote {
-    if (picked) return { ...d, catalogId: picked.id, name: picked.name, description: picked.description }
-    const { catalogId: _removed, ...manual } = d
-    return manual
-  }
-
-  /** Empareja por nombre las dotes escritas a mano con las del catálogo (ignora tildes, mayúsculas y el "(E)"). */
-  function linkAll() {
-    let linked = 0
-    const next = dotes.map((d) => {
-      if (d.catalogId && catalogById.has(d.catalogId)) return d
-      const found = matchDote(d.name, catalog, doteTypeOfNode(d.nodeId) ?? undefined)
-      if (!found) return d
-      linked++
-      return withCatalog(d, found)
-    })
-    setDotes(next)
-    const rest = next.filter((d) => !d.catalogId || !catalogById.has(d.catalogId)).length
-    setMessage(
-      linked === 0
-        ? 'Ninguna dote coincide por nombre con el catálogo.'
-        : `Se vincularon ${linked} dote(s) con el catálogo${rest > 0 ? ` y ${rest} quedaron sin coincidencia` : ''}. Falta guardar.`,
-    )
   }
 
   async function saveDotes() {
@@ -265,58 +236,14 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
         Deshacer la última compra de {BRANCH_LABELS[branch]}
       </button>
 
-      <Section title="Dotes" className="spaced">
-        {dotes.length === 0 && <p className="muted small">Todavía no hay dotes.</p>}
-        {dotes.map((d, i) => {
-          const linked = d.catalogId ? catalogById.get(d.catalogId) : undefined
-          return (
-            <div key={d.id} className="ref">
-              {linked ? (
-                <div className="dote-preview" aria-label={`Dote ${i + 1}`}>
-                  <DoteInfo tier={linked.tier} name={linked.name} use={linked.use} description={linked.description} type={linked.type} />
-                </div>
-              ) : (
-                <>
-                  <TextField
-                    label={`Nombre de la dote ${i + 1}`}
-                    value={d.name}
-                    onChange={(name) => setDotes(dotes.map((x) => (x.id === d.id ? { ...x, name } : x)))}
-                    placeholder="Todavía sin elegir"
-                  />
-                  <TextAreaField
-                    label={`Descripción de la dote ${i + 1}`}
-                    value={d.description}
-                    onChange={(description) => setDotes(dotes.map((x) => (x.id === d.id ? { ...x, description } : x)))}
-                  />
-                </>
-              )}
-              <DotePicker
-                branch={d.nodeId.split(':')[0]}
-                catalog={catalog}
-                count={doteCount}
-                ignoreLadder
-                showPreview={false}
-                quiet
-                label={`Dote ${i + 1} del catálogo`}
-                value={linked ? linked.id : ''}
-                onSelect={(picked) => setDotes(dotes.map((x) => (x.id === d.id ? withCatalog(x, picked) : x)))}
-              />
-            </div>
-          )
-        })}
-        <div className="actions">
-          {catalog.length > 0 && dotes.some((d) => !d.catalogId || !catalogById.has(d.catalogId)) && (
-            <button className="btn secondary" onClick={linkAll}>
-              Vincular todo con el catálogo
-            </button>
-          )}
-          {dotes.length > 0 && (
-            <button className="btn secondary" onClick={() => void saveDotes()}>
-              Guardar dotes
-            </button>
-          )}
-        </div>
-      </Section>
+      <OwnedDotesCard
+        dotes={dotes}
+        setDotes={setDotes}
+        catalog={catalog}
+        count={doteCount}
+        onSave={() => void saveDotes()}
+        onMessage={setMessage}
+      />
 
       <StatPointsCard character={character} />
 

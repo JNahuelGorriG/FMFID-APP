@@ -2,23 +2,27 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import { db, exportDotes, importDotes } from '../db'
 import {
+  DOTE_SORT_LABELS,
   DOTE_TIERS,
   DOTE_TYPES,
   USE_KIND_LABELS,
   USE_SUGGESTIONS,
+  doteOwners,
   filterDotes,
   normalizeDoteName,
+  ownedDotes,
+  sortDotesBy,
   validateDote,
 } from '../rules'
-import type { CatalogDote, DoteFilter, DoteTier, DoteType, NewDote, UseKind } from '../rules'
+import type { CatalogDote, DoteFilter, DoteOwner, DoteSort, DoteTier, DoteType, NewDote, UseKind } from '../rules'
+import type { ReferenceSheet } from '../db'
 import { DoteInfo, TierChip } from './DoteParts'
-import { doteRepo, settingsRepo } from './data'
+import { doteRepo, repo, settingsRepo } from './data'
 import { SelectField, TextAreaField, TextField } from './fields'
 import { DOTE_TYPE_LABELS } from './format'
 import { CollapseAll, Section } from './Section'
-import { DataTable } from './TablesScreen'
 
-type View = 'stat' | 'tabla'
+type View = 'stat' | 'jugador' | 'tabla'
 
 const TYPE_OPTIONS = [
   { value: 'todos' as const, label: 'Todos los tipos' },
@@ -39,16 +43,23 @@ const emptyDote = (type: DoteType): NewDote => ({ tier: 'E', name: '', type, use
 export function DotesScreen() {
   const dotes = useLiveQuery(() => doteRepo.list(), [])
   const sheets = useLiveQuery(() => settingsRepo.getDoteSheets(), [])
-  const [filter, setFilter] = useState<Required<DoteFilter>>({ query: '', type: 'todos', tier: 'todos', kind: 'todos' })
+  const characters = useLiveQuery(() => repo.list(), [])
+  const [filter, setFilter] = useState<Required<DoteFilter>>({ query: '', type: 'todos', tier: 'todos', kind: 'todos', owner: 'todos' })
+  const [sort, setSort] = useState<DoteSort>('tipo')
   const [view, setView] = useState<View>('stat')
   /** null = sin formulario; { id: null } = dote nueva. */
   const [editing, setEditing] = useState<{ id: string | null; type: DoteType } | null>(null)
   const [message, setMessage] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
 
-  if (dotes === undefined) return <p className="muted">Cargando…</p>
+  if (dotes === undefined || characters === undefined) return <p className="muted">Cargando…</p>
 
-  const shown = filterDotes(dotes, filter)
+  const owners = doteOwners(dotes, characters)
+  const shown = sortDotesBy(filterDotes(dotes, filter, owners), sort)
+  const ownersText = (d: CatalogDote): string | undefined => {
+    const list: DoteOwner[] = owners.get(d.id) ?? []
+    return list.length > 0 ? `La tienen: ${list.map((o) => o.name).join(', ')}` : undefined
+  }
   const set = <K extends keyof typeof filter>(key: K, value: (typeof filter)[K]) => setFilter((f) => ({ ...f, [key]: value }))
   const editingDote = editing?.id ? (dotes.find((d) => d.id === editing.id) ?? null) : null
 
@@ -95,15 +106,32 @@ export function DotesScreen() {
             onChange={(e) => set('query', e.target.value)}
           />
         </label>
-        <div className="grid-3">
+        <div className="grid-2">
           <SelectField label="Filtrar por tipo" value={filter.type} options={TYPE_OPTIONS} onChange={(v) => set('type', v)} />
           <SelectField label="Filtrar por tier" value={filter.tier} options={TIER_OPTIONS} onChange={(v) => set('tier', v)} />
           <SelectField label="Filtrar por uso" value={filter.kind} options={KIND_OPTIONS} onChange={(v) => set('kind', v)} />
+          <SelectField
+            label="Filtrar por jugador"
+            value={filter.owner}
+            options={[
+              { value: 'todos', label: 'Todos los jugadores' },
+              ...characters.map((c) => ({ value: c.id, label: `${c.name}${c.playerName ? ` (${c.playerName})` : ''}` })),
+              { value: 'nadie', label: 'Dotes que nadie tiene' },
+            ]}
+            onChange={(v) => set('owner', v)}
+          />
         </div>
+        <SelectField
+          label="Ordenar por"
+          value={sort}
+          options={(Object.keys(DOTE_SORT_LABELS) as DoteSort[]).map((k) => ({ value: k, label: DOTE_SORT_LABELS[k] }))}
+          onChange={setSort}
+        />
         <div className="seg" role="group" aria-label="Cómo verlas">
           {(
             [
               ['stat', 'Por stat'],
+              ['jugador', 'Por jugador'],
               ['tabla', 'Tabla'],
             ] as const
           ).map(([id, label]) => (
@@ -161,7 +189,7 @@ export function DotesScreen() {
               <ul className="dotes">
                 {list.map((d) => (
                   <li key={d.id} className="dote-row">
-                    <DoteInfo tier={d.tier} name={d.name} use={d.use} description={d.description} />
+                    <DoteInfo tier={d.tier} name={d.name} use={d.use} description={d.description} extra={ownersText(d)} />
                     <button
                       className="btn secondary compact"
                       aria-label={`Editar ${d.name}`}
@@ -176,6 +204,38 @@ export function DotesScreen() {
           )
         })}
 
+      {view === 'jugador' &&
+        characters
+          .filter((c) => filter.owner === 'todos' || filter.owner === c.id)
+          .map((c) => {
+            const mine = ownedDotes(c, dotes)
+            const own = new Set(mine.flatMap((o) => (o.catalog ? [o.catalog.id] : [])))
+            const list = shown.filter((d) => own.has(d.id))
+            const unlinked = mine.filter((o) => !o.catalog).length
+            if (list.length === 0 && unlinked === 0) return null
+            return (
+              <Section key={c.id} title={`${c.name} (${list.length})`} storageKey={`Dotes: jugador ${c.id}`}>
+                {c.playerName && <p className="muted small">Jugador: {c.playerName}</p>}
+                <ul className="dotes">
+                  {list.map((d) => (
+                    <li key={d.id} className="dote-row">
+                      <DoteInfo tier={d.tier} name={d.name} use={d.use} description={d.description} type={d.type} />
+                      <button className="btn secondary compact" aria-label={`Editar ${d.name}`} onClick={() => setEditing({ id: d.id, type: d.type })}>
+                        Editar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {list.length === 0 && <p className="muted small">Ninguna de sus dotes coincide con los filtros.</p>}
+                {unlinked > 0 && (
+                  <p className="muted small">
+                    {unlinked} dote(s) sin vincular con el catálogo: se vinculan desde su árbol de stats.
+                  </p>
+                )}
+              </Section>
+            )
+          })}
+
       {view === 'tabla' && shown.length > 0 && (
         <div className="card table-wrap" aria-label="Tabla de dotes">
           <table className="cmp ref">
@@ -186,6 +246,7 @@ export function DotesScreen() {
                 <th>Tipo</th>
                 <th>Uso</th>
                 <th>Descripción</th>
+                <th>La tienen</th>
               </tr>
             </thead>
             <tbody>
@@ -202,6 +263,7 @@ export function DotesScreen() {
                   <td>{DOTE_TYPE_LABELS[d.type]}</td>
                   <td>{d.use}</td>
                   <td className="dote-text">{d.description}</td>
+                  <td>{(owners.get(d.id) ?? []).map((o) => o.name).join(', ')}</td>
                 </tr>
               ))}
             </tbody>
@@ -239,14 +301,50 @@ export function DotesScreen() {
 
       {(sheets ?? []).map((sheet) => (
         <Section key={sheet.id} title={sheet.title} storageKey={`Dotes: ${sheet.id}`} defaultOpen={false}>
-          {sheet.header && sheet.rows.length > 0 ? (
-            <DataTable head={sheet.rows[0]} rows={sheet.rows.slice(1)} />
-          ) : (
-            <DataTable head={[]} rows={sheet.rows} />
-          )}
+          <RulesSheet sheet={sheet} />
         </Section>
       ))}
     </section>
+  )
+}
+
+/**
+ * Una hoja de reglas como lista legible: cada fila con su título en negrita y su texto a continuación, todo
+ * alineado a la izquierda y con saltos de línea (una tabla de texto largo no se puede leer en el teléfono).
+ */
+function RulesSheet({ sheet }: { sheet: ReferenceSheet }) {
+  const head = sheet.header ? (sheet.rows[0] ?? []) : []
+  const rows = sheet.header ? sheet.rows.slice(1) : sheet.rows
+  const isTiers = sheet.id === 'dotes-escalera'
+  const isLinks = sheet.id === 'dotes-sinergias'
+
+  return (
+    <div className="rules">
+      {rows.map((row, i) => {
+        const [first = '', second = '', ...rest] = row
+        const title = isLinks ? `${first} · ${second}` : first
+        const details = isLinks ? rest : [second, ...rest]
+        const labels = isLinks ? head.slice(2) : head.slice(1)
+        return (
+          <div key={`${first}-${i}`} className="rule-row">
+            <div className="rule-title">
+              {isTiers && DOTE_TIERS.includes(first as DoteTier) && <TierChip tier={first as DoteTier} />}
+              <strong>{isTiers ? '' : title}</strong>
+            </div>
+            {details.map((text, j) => {
+              // con más de una columna de detalle, cada una lleva el nombre de su columna
+              const label = details.length > 1 ? labels[j] : undefined
+              return (
+                <p key={j} className="small rule-text">
+                  {label && <strong>{label}: </strong>}
+                  {text}
+                </p>
+              )
+            })}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

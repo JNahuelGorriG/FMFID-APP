@@ -237,7 +237,8 @@ export function describeHit(name: string, hit: PcHit): string {
   return parts.join(' · ')
 }
 
-import type { DoteType } from '../rules'
+import { slotPlace } from '../rules'
+import type { BranchId, DoteType } from '../rules'
 
 /** Cómo se llama cada tipo de dote en pantalla. */
 export const DOTE_TYPE_LABELS: Record<DoteType, string> = {
@@ -249,4 +250,13 @@ export const DOTE_TYPE_LABELS: Record<DoteType, string> = {
   sabiduria: 'Sabiduría',
   carisma: 'Carisma',
   unico: 'Dotes únicas',
+}
+
+/** Cómo se llama cada rama del árbol en pantalla. */
+export const BRANCH_LABELS: Record<BranchId, string> = { ...STAT_LABELS, heroe: 'Héroe', categoria: 'Categoría' }
+
+/** "Destreza · etapa 1 · nodo 5": de qué espacio del árbol es una dote. */
+export function slotLabel(nodeId: string): string {
+  const place = slotPlace(nodeId)
+  return place ? `${BRANCH_LABELS[place.branch]} · etapa ${place.stage} · nodo ${place.node}` : nodeId
 }
