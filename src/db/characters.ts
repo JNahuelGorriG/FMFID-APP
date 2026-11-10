@@ -1,6 +1,7 @@
 import type { AppDB, ChangeRecord } from './db'
 import { deepEqual } from './changes'
 import { getIn, setIn } from './paths'
+import { STAT_NAMES } from '../rules'
 import type { Character } from '../rules'
 
 const newId = (): string => crypto.randomUUID()
@@ -12,6 +13,8 @@ export const OPTIONAL_PATHS: ReadonlySet<string> = new Set([
   'derived.agilityStat',
   'tree',
   'superStats',
+  // El entrenamiento temporal no existe en los personajes anteriores.
+  ...STAT_NAMES.map((stat) => `sources.${stat}.entrenamientoTemp`),
 ])
 
 export type NewCharacter = Omit<Character, 'id' | 'createdAt' | 'updatedAt'>

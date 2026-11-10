@@ -12,6 +12,7 @@ export function statTotal(sources: StatSources, multiplier: number): number {
     sources.despertar +
     sources.merito +
     sources.entrenamiento +
+    (sources.entrenamientoTemp ?? 0) +
     sources.regalo +
     sources.drogasShoko +
     sources.otros

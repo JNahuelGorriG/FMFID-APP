@@ -9,6 +9,7 @@ import {
   appliedTotals,
   branchesWithStagesDone,
   branchState,
+  editPurchase,
   statDoteCount,
   purchaseNode,
   treeOf,
@@ -305,6 +306,47 @@ function NodeCard({
   const [error, setError] = useState('')
   const picked = choice === 'dote' ? (catalog.find((d) => d.id === catalogId) ?? null) : null
 
+  // Edición de un nodo ya comprado
+  const [editing, setEditing] = useState(false)
+  const [eChoice, setEChoice] = useState<Choice>(node.options[0])
+  const [eNote, setENote] = useState('')
+  const [eDesc, setEDesc] = useState('')
+  const [eCatalogId, setECatalogId] = useState('')
+  const [eError, setEError] = useState('')
+  const ePicked = eChoice === 'dote' ? (catalog.find((d) => d.id === eCatalogId) ?? null) : null
+  const where = `${BRANCH_LABELS[node.branch]} etapa ${node.stage} nodo ${node.index + 1}`
+
+  function startEdit() {
+    const dote = (character.tree?.dotes ?? []).find((d) => d.nodeId === node.id)
+    setEChoice(purchase?.choice ?? node.options[0])
+    setENote(dote?.name ?? purchase?.note ?? '')
+    setEDesc(dote?.description ?? '')
+    setECatalogId(dote?.catalogId && catalog.some((c) => c.id === dote.catalogId) ? dote.catalogId : '')
+    setEError('')
+    setEditing(true)
+  }
+
+  async function saveEdit() {
+    if (!purchase) return
+    try {
+      const name = ePicked ? ePicked.name : eNote
+      const updated = editPurchase(character, node.id, {
+        choice: eChoice,
+        note: name,
+        description: ePicked ? ePicked.description : eDesc,
+        catalogId: ePicked ? ePicked.id : null,
+      })
+      const detail =
+        eChoice !== purchase.choice
+          ? `de ${choiceText(node, purchase.choice)} a ${choiceText(node, eChoice)}`
+          : choiceText(node, eChoice)
+      await persist(updated, `Árbol: corrigió ${where} · ${detail}${name.trim() ? ` · ${name.trim()}` : ''}`)
+      setEditing(false)
+    } catch (e) {
+      setEError(e instanceof Error ? e.message : 'No se pudo guardar.')
+    }
+  }
+
   async function buy() {
     try {
       const updated = purchaseNode(character, node.id, choice, {
@@ -343,6 +385,74 @@ function NodeCard({
         </p>
       )}
       {status === 'bloqueado' && <p className="muted small">{reason}</p>}
+
+      {status === 'comprado' && purchase && (
+        <>
+          <button
+            className="btn secondary compact"
+            aria-label={`${editing ? 'Cancelar la edición del' : 'Editar el'} nodo ${node.index + 1} de la etapa ${node.stage}`}
+            onClick={() => (editing ? setEditing(false) : startEdit())}
+          >
+            {editing ? 'Cancelar edición' : 'Editar'}
+          </button>
+          {editing && (
+            <div className="ref">
+              {node.options.length > 1 && (
+                <SelectField
+                  label={`Cambiar la elección del nodo ${node.index + 1} de la etapa ${node.stage}`}
+                  value={eChoice}
+                  options={node.options.map((o) => ({ value: o, label: choiceText(node, o) }))}
+                  onChange={(c) => {
+                    setEChoice(c)
+                    setECatalogId('')
+                  }}
+                />
+              )}
+              {eChoice !== purchase.choice && (
+                <p className="muted small">
+                  Hoy suma: {choiceText(node, purchase.choice)}. Pasa a sumar: {choiceText(node, eChoice)}. Los stats, la energía y
+                  los MH se ajustan solos; los BP no cambian.
+                </p>
+              )}
+              {node.options.includes('dote') && node.options.includes('hab') && (
+                <p className="muted small">
+                  Para dejarlo sin definir, elige Dote y deja el nombre en blanco: queda como espacio libre en las dotes del jugador.
+                </p>
+              )}
+              {eChoice === 'dote' && (
+                <DotePicker
+                  branch={node.branch}
+                  catalog={catalog}
+                  count={doteCount}
+                  ignoreLadder
+                  value={eCatalogId}
+                  onSelect={(d) => setECatalogId(d?.id ?? '')}
+                  label="Dote del catálogo (editar)"
+                />
+              )}
+              {(eChoice === 'dote' || eChoice === 'hab') && !ePicked && (
+                <>
+                  <TextField
+                    label={node.empty ? 'Qué da este espacio' : eChoice === 'dote' ? 'Nombre de la dote' : 'Nombre de la habilidad'}
+                    value={eNote}
+                    onChange={setENote}
+                    placeholder="Se puede dejar en blanco"
+                  />
+                  {eChoice === 'dote' && <TextAreaField label="Descripción de la dote" value={eDesc} onChange={setEDesc} />}
+                </>
+              )}
+              {eError && (
+                <p className="errors" role="alert">
+                  {eError}
+                </p>
+              )}
+              <button className="btn" onClick={() => void saveEdit()}>
+                Guardar cambios del nodo
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {status === 'disponible' && (
         <>

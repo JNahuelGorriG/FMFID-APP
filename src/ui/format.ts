@@ -32,7 +32,8 @@ export const SOURCE_LABELS = {
   categoria: 'Categoría',
   despertar: 'Despertar',
   merito: 'Mérito',
-  entrenamiento: 'Entrenamiento',
+  entrenamiento: 'Entrenamiento permanente',
+  entrenamientoTemp: 'Entrenamiento temporal',
   regalo: 'Regalo',
   drogasShoko: 'Drogas Shoko',
   otros: 'Otros',
@@ -43,7 +44,7 @@ export type SourceKey = keyof typeof SOURCE_LABELS
 /** Fuentes que llevan multiplicador y fuentes planas, para agruparlas en pantalla. */
 export const INNATE_KEYS: SourceKey[] = ['puntosIniciales', 'arbolHeroe', 'heroe', 'categoria']
 export const FLAT_KEYS: SourceKey[] = [
-  'despertar', 'merito', 'entrenamiento', 'regalo', 'drogasShoko', 'otros',
+  'despertar', 'merito', 'entrenamiento', 'entrenamientoTemp', 'regalo', 'drogasShoko', 'otros',
 ]
 
 export const ENERGY_LABELS: Record<string, string> = {

@@ -32,7 +32,10 @@ export interface StatSources {
   // Planas (sin multiplicador)
   despertar: number
   merito: number
+  /** Entrenamiento permanente. */
   entrenamiento: number
+  /** Entrenamiento temporal: puntos que se pueden perder. Sin dato (personajes anteriores), vale 0. */
+  entrenamientoTemp?: number
   regalo: number
   drogasShoko: number
   otros: number

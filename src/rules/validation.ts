@@ -19,6 +19,9 @@ export function validateCharacter(c: Character): string[] {
     if (!(c.multipliers[name] > 0)) errors.push(`El multiplicador de ${name} debe ser mayor que 0.`)
     for (const [source, value] of Object.entries(c.sources[name])) {
       if (!Number.isFinite(value)) errors.push(`Valor inválido en ${name}: ${source}.`)
+      if ((source === 'entrenamiento' || source === 'entrenamientoTemp') && value < 0) {
+        errors.push(`El entrenamiento de ${name} no puede ser negativo.`)
+      }
     }
   }
 
@@ -43,7 +46,7 @@ export function newCharacterTemplate(): Omit<Character, 'id' | 'createdAt' | 'up
   }
   const blank = {
     puntosIniciales: 0, arbolHeroe: 0, heroe: 0, categoria: 0,
-    despertar: 0, merito: 0, entrenamiento: 0, regalo: 0, drogasShoko: 0, otros: 0,
+    despertar: 0, merito: 0, entrenamiento: 0, entrenamientoTemp: 0, regalo: 0, drogasShoko: 0, otros: 0,
   }
   return {
     name: 'Nuevo personaje',

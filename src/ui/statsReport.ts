@@ -56,8 +56,8 @@ function block(character: Character, options: ReportOptions): string[] {
     out.push('', 'DESGLOSE DE STATS (fuentes con multiplicador, y fuentes planas)')
     for (const stat of STAT_NAMES) {
       const s = character.sources[stat]
-      const innate = INNATE_KEYS.map((k) => `${SOURCE_LABELS[k]} ${fmt(s[k])}`).join(' + ')
-      const flat = FLAT_KEYS.map((k) => `${SOURCE_LABELS[k]} ${fmt(s[k])}`).join(' + ')
+      const innate = INNATE_KEYS.map((k) => `${SOURCE_LABELS[k]} ${fmt(s[k] ?? 0)}`).join(' + ')
+      const flat = FLAT_KEYS.map((k) => `${SOURCE_LABELS[k]} ${fmt(s[k] ?? 0)}`).join(' + ')
       out.push(`  ${STAT_LABELS[stat]} = (${innate}) × ${fmt(character.multipliers[stat])} + ${flat}`)
     }
   }

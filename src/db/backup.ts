@@ -1,6 +1,7 @@
 import type { AppDB, ChangeRecord, Setting } from './db'
 import { migrateCombat, normalizeCombat, normalizeNpc } from './migrations'
 import type { LegacyCombat, LegacyState } from './migrations'
+import { STAT_NAMES } from '../rules'
 import type { CatalogDote, Character, Combat, Npc } from '../rules'
 
 export const BACKUP_VERSION = 9
@@ -99,6 +100,21 @@ export interface ExcelImportResult {
  * Del NPC se conserva su perfil de combate si el Excel no trae uno, y del personaje la clase y el
  * jugador si el Excel los trae vacíos. Los que no existían se agregan. Los precios se reemplazan.
  */
+/**
+ * El Excel no trae el entrenamiento temporal (es de la app): se conserva el que ya tenía el personaje, salvo que
+ * el archivo lo traiga.
+ */
+function keepTemporaryTraining(incoming: Character['sources'], existing: Character['sources']): Character['sources'] {
+  const merged = { ...incoming }
+  for (const stat of STAT_NAMES) {
+    const kept = existing[stat].entrenamientoTemp
+    if (incoming[stat].entrenamientoTemp === undefined && kept !== undefined) {
+      merged[stat] = { ...incoming[stat], entrenamientoTemp: kept }
+    }
+  }
+  return merged
+}
+
 export async function importFromExcel(db: AppDB, data: unknown): Promise<ExcelImportResult> {
   if (!isBackup(data)) throw new Error('El archivo no es un respaldo de FMFID APP.')
   if (data.version > BACKUP_VERSION) {
@@ -122,6 +138,7 @@ export async function importFromExcel(db: AppDB, data: unknown): Promise<ExcelIm
         createdAt: existing.createdAt,
         className: incoming.className || existing.className,
         playerName: incoming.playerName || existing.playerName,
+        sources: keepTemporaryTraining(incoming.sources, existing.sources),
       }
     })
 

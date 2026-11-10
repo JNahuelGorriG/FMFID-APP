@@ -84,7 +84,7 @@ describe('app', () => {
     fireEvent.click(await screen.findByText('Edward'))
     fireEvent.click(await screen.findByText('Editar'))
 
-    fireEvent.change(await screen.findByLabelText('Fuerza · Entrenamiento'), { target: { value: '60' } })
+    fireEvent.change(await screen.findByLabelText('Fuerza · Entrenamiento permanente'), { target: { value: '60' } })
     fireEvent.change(screen.getByLabelText('Motivo del cambio'), { target: { value: 'Entrenó en el dojo' } })
     expect(screen.getByText('1 dato(s) para guardar.')).toBeTruthy()
     fireEvent.click(screen.getByText('Guardar cambios'))
@@ -93,7 +93,7 @@ describe('app', () => {
     expect(stats.textContent).toContain('367,1')
     expect(await screen.findByText('Historial de cambios (1)')).toBeTruthy()
     expect(screen.getByText('Entrenó en el dojo')).toBeTruthy()
-    expect(screen.getByText('Fuerza · Entrenamiento: 50 → 60')).toBeTruthy()
+    expect(screen.getByText('Fuerza · Entrenamiento permanente: 50 → 60')).toBeTruthy()
   })
 
   it('no guarda un personaje inválido y explica el problema', async () => {

@@ -230,8 +230,8 @@ function StatEditor({
   set: (path: string, value: unknown) => void
 }) {
   const sources = draft.sources[name]
-  const innate = INNATE_KEYS.reduce((sum, k) => sum + sources[k], 0)
-  const flat = FLAT_KEYS.reduce((sum, k) => sum + sources[k], 0)
+  const innate = INNATE_KEYS.reduce((sum, k) => sum + (sources[k] ?? 0), 0)
+  const flat = FLAT_KEYS.reduce((sum, k) => sum + (sources[k] ?? 0), 0)
   const total = innate * draft.multipliers[name] + flat
 
   return (
@@ -258,7 +258,7 @@ function StatEditor({
           <NumberField
             key={key}
             label={`${STAT_LABELS[name]} · ${SOURCE_LABELS[key]}`}
-            value={sources[key]}
+            value={sources[key] ?? 0}
             onChange={(v) => set(`sources.${name}.${key}`, v)}
           />
         ))}
@@ -269,7 +269,7 @@ function StatEditor({
           <NumberField
             key={key}
             label={`${STAT_LABELS[name]} · ${SOURCE_LABELS[key]}`}
-            value={sources[key]}
+            value={sources[key] ?? 0}
             onChange={(v) => set(`sources.${name}.${key}`, v)}
           />
         ))}

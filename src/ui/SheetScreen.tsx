@@ -7,6 +7,7 @@ import { DOTE_TYPE_LABELS, STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDas
 import { SelectField } from './fields'
 import { DoteInfo } from './DoteParts'
 import { CollapseAll, Section } from './Section'
+import { TrainingCard } from './TrainingCard'
 import { StatPointsCard } from './StatPointsCard'
 
 interface Props {
@@ -145,6 +146,8 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
           </>
         )}
       </Section>
+
+      <TrainingCard character={character} />
 
       <Section title="Stats derivados" defaultOpen={false}>
         <dl className="derived">

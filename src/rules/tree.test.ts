@@ -10,6 +10,7 @@ import {
   characterSheet,
   completedBranches,
   emptyTree,
+  editPurchase,
   energySplit,
   findNode,
   orientation,
@@ -447,5 +448,111 @@ describe('dotes del catálogo en el árbol', () => {
     // una habilidad en lugar de dote tampoco cuenta
     const hab = purchaseNode(upToDote(), 'fuerza:1:4', 'hab')
     expect(statDoteCount(treeOf(hab))).toBe(0)
+  })
+})
+
+describe('corregir un nodo ya comprado', () => {
+  /** Fuerza hasta el nodo 5 comprado: 4 de stat y la habilidad (como un jugador que no eligió dote). */
+  const upToHab = (): Character => purchaseNode(buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat']), 'fuerza:1:4', 'hab')
+  /** Lo que sumó el árbol al stat (el personaje ya traía puntos de antes). */
+  const stat = (c: Character, s: 'fuerza' | 'destreza' = 'fuerza') => c.sources[s].arbolHeroe - edward.sources[s].arbolHeroe
+
+  it('de habilidad a dote: queda como espacio libre y no cambian los BP', () => {
+    const c = upToHab()
+    const e = editPurchase(c, 'fuerza:1:4', { choice: 'dote' })
+    expect(treeOf(e).purchases.find((p) => p.nodeId === 'fuerza:1:4')).toMatchObject({ choice: 'dote', note: '' })
+    expect(treeOf(e).dotes).toEqual([{ id: 'fuerza:1:4', name: '', description: '', nodeId: 'fuerza:1:4' }])
+    expect(treeOf(e).bp).toBe(treeOf(c).bp)
+    expect(statDoteCount(treeOf(e))).toBe(1) // ahora cuenta para la escalera
+    expect(e.sources).toEqual(c.sources) // ningún stat cambia
+  })
+
+  it('de dote a habilidad: la dote sale de la lista del jugador', () => {
+    const withDote = purchaseNode(buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat']), 'fuerza:1:4', 'dote', { note: 'Piña', description: 'x', catalogId: 'abc' })
+    const e = editPurchase(withDote, 'fuerza:1:4', { choice: 'hab', note: 'Mapa mental' })
+    expect(treeOf(e).dotes).toEqual([])
+    expect(treeOf(e).purchases.find((p) => p.nodeId === 'fuerza:1:4')).toMatchObject({ choice: 'hab', note: 'Mapa mental' })
+    expect(statDoteCount(treeOf(e))).toBe(0)
+  })
+
+  it('cambia el nombre y la descripción sin cambiar la opción, y conserva el lugar de la dote', () => {
+    let c = purchaseNode(buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat']), 'fuerza:1:4', 'dote', { note: 'Vieja', description: 'a' })
+    c = buy(c, 'fuerza', ['stat', 'stat', 'stat', 'stat'])
+    c = purchaseNode(c, 'fuerza:1:9', 'dote', { note: 'Segunda' })
+    const e = editPurchase(c, 'fuerza:1:4', { note: '  Nueva  ', description: 'b', catalogId: 'zzz' })
+    expect(treeOf(e).dotes.map((d) => [d.nodeId, d.name, d.description, d.catalogId])).toEqual([
+      ['fuerza:1:4', 'Nueva', 'b', 'zzz'],
+      ['fuerza:1:9', 'Segunda', '', undefined],
+    ])
+    expect(treeOf(e).purchases.find((p) => p.nodeId === 'fuerza:1:4')?.note).toBe('Nueva')
+  })
+
+  it('catalogId: sin dato se conserva, null la suelta y un id la vincula', () => {
+    const c = purchaseNode(buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat']), 'fuerza:1:4', 'dote', { note: 'X', catalogId: 'abc' })
+    expect(treeOf(editPurchase(c, 'fuerza:1:4', { note: 'Y' })).dotes[0].catalogId).toBe('abc')
+    expect('catalogId' in treeOf(editPurchase(c, 'fuerza:1:4', { catalogId: null })).dotes[0]).toBe(false)
+    expect(treeOf(editPurchase(c, 'fuerza:1:4', { catalogId: 'nuevo' })).dotes[0].catalogId).toBe('nuevo')
+  })
+
+  it('de stat a energía: quita los puntos, suma la energía y deja los BP; y volver lo deja como estaba', () => {
+    const c = buy(withBp(100), 'fuerza', ['stat', 'stat']) // el nodo 2 (25 E. o 2 P.) elegido como stat
+    expect(stat(c)).toBe(4)
+    const e = editPurchase(c, 'fuerza:1:1', { choice: 'energia' })
+    expect(stat(e)).toBe(2) // se fueron los 2 puntos del nodo 2
+    expect(e.energy.bonusStamina).toBe(c.energy.bonusStamina + 25) // Fuerza es física: todo a estamina
+    expect(e.energy.bonusMana).toBe(c.energy.bonusMana)
+    expect(treeOf(e).bp).toBe(treeOf(c).bp)
+    expect(editPurchase(e, 'fuerza:1:1', { choice: 'stat' })).toEqual(c)
+  })
+
+  it('de stat a MH y de MH a stat', () => {
+    const c = buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat', 'stat']) // el nodo 4 (2 MH o 4 P.) como stat
+    const e = editPurchase(c, 'fuerza:1:3', { choice: 'mh' })
+    expect(stat(e)).toBe(stat(c) - 4)
+    expect(treeOf(e).mh).toBe(treeOf(c).mh + 2)
+    const back = editPurchase(e, 'fuerza:1:3', { choice: 'stat' })
+    expect(back).toEqual(c)
+  })
+
+  it('en Héroe el cambio llega a los 7 stats y a las dos energías, y en Categoría respeta el reparto', () => {
+    const h = buy(withBp(100), 'heroe', ['stat', 'stat'])
+    const he = editPurchase(h, 'heroe:1:1', { choice: 'energia' })
+    expect(he.sources.fuerza.heroe).toBe(h.sources.fuerza.heroe - 2)
+    expect(he.sources.carisma.heroe).toBe(h.sources.carisma.heroe - 2)
+    expect(he.energy.bonusMana).toBe(h.energy.bonusMana + 25)
+    expect(he.energy.bonusStamina).toBe(h.energy.bonusStamina + 25)
+
+    const k = buy(withBp(100), 'categoria', ['stat', 'stat'])
+    const ke = editPurchase(k, 'categoria:1:1', { choice: 'energia' })
+    expect(editPurchase(ke, 'categoria:1:1', { choice: 'stat' })).toEqual(k)
+  })
+
+  it('lo corregido sigue coincidiendo con lo que suman las compras, y se puede deshacer después', () => {
+    const base = buy(withBp(100), 'fuerza', ['stat'])
+    const c = buy(base, 'fuerza', ['stat'])
+    const e = editPurchase(c, 'fuerza:1:1', { choice: 'energia' })
+    // las compras suman lo mismo que está cargado en el personaje
+    expect(appliedTotals(treeOf(e)).arbolHeroe.fuerza).toBe(stat(e))
+    expect(appliedTotals(treeOf(e)).stamina).toBe(e.energy.bonusStamina - edward.energy.bonusStamina)
+    // deshacer la última compra (el nodo corregido) vuelve al estado anterior
+    expect(undoLastPurchase(e, 'fuerza')).toEqual(base)
+  })
+
+  it('no toca los demás nodos', () => {
+    const c = buy(withBp(100), 'fuerza', ['stat', 'stat', 'stat'])
+    const e = editPurchase(c, 'fuerza:1:2', { choice: 'energia' })
+    expect(treeOf(e).purchases.filter((p) => p.nodeId !== 'fuerza:1:2')).toEqual(treeOf(c).purchases.filter((p) => p.nodeId !== 'fuerza:1:2'))
+  })
+
+  it('avisa cuando el nodo no existe, no está comprado o la opción no es de ese nodo', () => {
+    const c = buy(withBp(100), 'fuerza', ['stat'])
+    expect(() => editPurchase(c, 'nada:1:1', { note: 'x' })).toThrow(/no existe/)
+    expect(() => editPurchase(c, 'fuerza:1:5', { note: 'x' })).toThrow(/todavía no está comprado/)
+    expect(() => editPurchase(c, 'fuerza:1:0', { choice: 'energia' })).toThrow(/no existe en este nodo/)
+  })
+
+  it('editar sin cambiar nada deja todo igual', () => {
+    const c = upToHab()
+    expect(editPurchase(c, 'fuerza:1:4', {})).toEqual(c)
   })
 })

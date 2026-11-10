@@ -409,6 +409,64 @@ export function purchaseNode(
   }
 }
 
+export interface PurchaseEdit {
+  /** Otra opción del nodo. Cambiarla ajusta stats, energía y MH; los BP no cambian. */
+  choice?: Choice
+  /** Nombre de la dote o habilidad. */
+  note?: string
+  /** Descripción de la dote. */
+  description?: string
+  /** La dote del catálogo a la que corresponde; null la suelta del catálogo. Sin dato, se deja como está. */
+  catalogId?: string | null
+}
+
+/**
+ * Corrige un nodo ya comprado: cambia la opción elegida (por ejemplo, de habilidad a dote, o de stat a energía) y/o
+ * el nombre y la descripción de la dote o habilidad. Los BP gastados no cambian. Si cambia la opción, se resta lo
+ * que sumaba la anterior y se suma lo de la nueva, y la lista de dotes del jugador se ajusta sola.
+ */
+export function editPurchase(character: Character, nodeId: string, edit: PurchaseEdit): Character {
+  const node = findNode(nodeId)
+  if (!node) throw new Error('Ese nodo no existe.')
+  const tree = treeOf(character)
+  const purchase = tree.purchases.find((p) => p.nodeId === nodeId)
+  if (!purchase) throw new Error('Ese nodo todavía no está comprado.')
+  const choice = edit.choice ?? purchase.choice
+  if (!node.options.includes(choice)) throw new Error('Esa opción no existe en este nodo.')
+
+  let updated = character
+  let applied = purchase.applied
+  let mh = tree.mh
+  if (choice !== purchase.choice) {
+    updated = applyAll(updated, node.branch, purchase.applied, -1)
+    applied = appliedFor(updated, node, choice)
+    updated = applyAll(updated, node.branch, applied, 1)
+    mh = mh - purchase.applied.mh + applied.mh
+  }
+
+  const current = tree.dotes.find((d) => d.nodeId === nodeId)
+  const isNamed = choice === 'dote' || choice === 'hab'
+  const note = isNamed ? (edit.note ?? purchase.note).trim() : ''
+  const purchases = tree.purchases.map((p) => (p.nodeId === nodeId ? { ...p, choice, note, applied } : p))
+
+  let dotes = tree.dotes.filter((d) => d.nodeId !== nodeId)
+  if (choice === 'dote') {
+    const catalogId = edit.catalogId === undefined ? current?.catalogId : (edit.catalogId ?? undefined)
+    const dote: Dote = {
+      id: current?.id ?? nodeId,
+      name: note,
+      description: (edit.description ?? current?.description ?? '').trim(),
+      nodeId,
+      ...(catalogId ? { catalogId } : {}),
+    }
+    // la dote conserva su lugar en la lista si ya estaba
+    const at = current ? tree.dotes.indexOf(current) : tree.dotes.length
+    dotes = [...dotes.slice(0, at), dote, ...dotes.slice(at)]
+  }
+
+  return { ...updated, tree: { ...tree, mh, purchases, dotes } }
+}
+
 /** Compra el primer nodo disponible de una rama. */
 export function purchaseNext(
   character: Character,
