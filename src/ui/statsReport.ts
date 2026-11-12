@@ -39,8 +39,8 @@ function block(character: Character, options: ReportOptions): string[] {
   if (options.derived) {
     const d = sheet.derived
     out.push('', 'DAÑO Y DEFENSAS')
-    out.push(`  Daño físico: ${fmt(d.physDamage)} (con arma de referencia: ${fmtOrDash(d.physDamageWithWeapon)})`)
-    out.push(`  Daño mágico: ${fmt(d.magicDamage)} (con arma de referencia: ${fmtOrDash(d.magicDamageWithWeapon)})`)
+    out.push(`  Daño físico: ${fmt(d.physDamage)} SA (sin arma) · ${fmtOrDash(d.physDamageWithWeapon)} CA (con arma)`)
+    out.push(`  Daño mágico: ${fmt(d.magicDamage)} SA (sin arma) · ${fmtOrDash(d.magicDamageWithWeapon)} CA (con arma)`)
     out.push(`  Defensa física: ${fmt(d.physDefenseCA)} con armadura (CA) · ${fmt(d.physDefenseSA)} natural (SA)`)
     out.push(`  Defensa mágica: ${fmt(d.magicDefenseCA)} con armadura (CA) · ${fmt(d.magicDefenseSA)} natural (SA)`)
     out.push(`  Velocidad: ${fmt(d.speed)} · Alcance físico: ${fmt(d.physReach)} · Alcance mágico: ${fmt(d.magicReach)}`)

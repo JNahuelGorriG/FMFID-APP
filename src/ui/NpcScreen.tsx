@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { STAT_NAMES, defaultEnemyProfile, enemySheet, suggestedCombatRank } from '../rules'
 import type { Npc } from '../rules'
 import { npcRepo } from './data'
-import { STAT_LABELS, fmt } from './format'
+import { DAMAGE_LABELS, STAT_LABELS, fmt } from './format'
 import { Section } from './Section'
 
 interface Props {
@@ -93,9 +93,13 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
 
           <Section title="Daño y defensas" defaultOpen={false}>
             <dl className="derived">
-              <dt>Daño físico con arma</dt>
+              <dt>{DAMAGE_LABELS.physSA}</dt>
+              <dd>{fmt(sheet.physDamage)}</dd>
+              <dt>{DAMAGE_LABELS.physCA}</dt>
               <dd>{fmt(sheet.physDamageWithWeapon)}</dd>
-              <dt>Daño mágico con arma</dt>
+              <dt>{DAMAGE_LABELS.magicSA}</dt>
+              <dd>{fmt(sheet.magicDamage)}</dd>
+              <dt>{DAMAGE_LABELS.magicCA}</dt>
               <dd>{fmt(sheet.magicDamageWithWeapon)}</dd>
               <dt>Defensa física CA</dt>
               <dd>{fmt(sheet.physDefenseCA)}</dd>

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { db } from '../db'
 import { edward } from '../rules/fixtures'
-import { characterSheet } from '../rules'
+import { characterSheet, enemySheet } from '../rules'
 import { fmt } from './format'
 import { combatRepo, npcRepo, repo } from './data'
 import { branchNodes, defaultEnemyProfile, emptyTree, newNpcTemplate, purchaseNext, purchaseNode, updateParticipant } from '../rules'
@@ -142,6 +142,21 @@ describe('app', () => {
     const stats = await screen.findByLabelText('Stats del NPC')
     expect(stats.textContent).toContain('350')
     expect(screen.getByText('980 · 1.430')).toBeTruthy()
+  })
+
+  it('NPCs: el resumen muestra el daño SA (sin arma) y el CA (con arma)', async () => {
+    await npcRepo.create({ ...newNpcTemplate(), name: 'Amber', rank: 'C+', combat: defaultEnemyProfile('C+') })
+    render(<App />)
+    fireEvent.click(screen.getByText('NPCs'))
+    fireEvent.click(await screen.findByText('Amber'))
+    const e = enemySheet(defaultEnemyProfile('C+'))
+    const value = (label: string) => (screen.getByText(label).nextElementSibling as HTMLElement).textContent
+    expect(await screen.findByText('Daño físico SA (sin arma)')).toBeTruthy()
+    expect(value('Daño físico SA (sin arma)')).toBe(fmt(e.physDamage))
+    expect(value('Daño físico CA (con arma)')).toBe(fmt(e.physDamageWithWeapon))
+    expect(value('Daño mágico SA (sin arma)')).toBe(fmt(e.magicDamage))
+    expect(value('Daño mágico CA (con arma)')).toBe(fmt(e.magicDamageWithWeapon))
+    expect(e.physDamageWithWeapon).toBeGreaterThan(e.physDamage)
   })
 
   it('NPCs: crea el perfil de combate y lo edita a mano', async () => {
@@ -2100,5 +2115,54 @@ describe('app', () => {
     await screen.findByText('Árbol de Edward')
     await screen.findAllByText('Etapa 3')
     expect(screen.queryByText(/Por definir/)).toBeNull()
+  })
+
+  /** El valor que está a la derecha de un rótulo en una lista de datos (dt/dd). */
+  const dd = (label: string) => (screen.getByText(label).nextElementSibling as HTMLElement).textContent
+
+  it('ficha: el resumen muestra el daño SA (sin arma) y el CA (con arma), físico y mágico', async () => {
+    await repo.create(edwardData)
+    render(<App />)
+    fireEvent.click(await screen.findByText('Edward'))
+    const d = characterSheet(edward).derived
+    expect(await screen.findByText('Daño físico SA (sin arma)')).toBeTruthy()
+    expect(dd('Daño físico SA (sin arma)')).toBe(fmt(d.physDamage))
+    expect(dd('Daño físico CA (con arma)')).toBe(d.physDamageWithWeapon === null ? '—' : fmt(d.physDamageWithWeapon))
+    expect(dd('Daño mágico SA (sin arma)')).toBe(fmt(d.magicDamage))
+    expect(dd('Daño mágico CA (con arma)')).toBe(d.magicDamageWithWeapon === null ? '—' : fmt(d.magicDamageWithWeapon))
+    // el SA no es lo mismo que el CA
+    expect(d.physDamageWithWeapon).not.toBe(d.physDamage)
+    // ya no queda el rótulo viejo
+    expect(screen.queryByText('Daño físico con arma')).toBeNull()
+  })
+
+  it('combate: el panel de valores con efectos lista el daño SA y el CA', async () => {
+    await repo.create(edwardData)
+    await openNewCombat()
+    goTo('Agregar')
+    fireEvent.click(await screen.findByText('Agregar jugador'))
+    goTo('Turnos')
+    await openFirstParticipant()
+    fireEvent.change(await screen.findByLabelText('Valor fijo'), { target: { value: '100' } })
+    fireEvent.click(screen.getByText('Agregar efecto'))
+    const section = (await screen.findByText('Valores con efectos')).closest('details') as HTMLElement
+    // un buff de +100 a un stat de daño cambia las dos versiones del daño
+    await waitFor(() => expect(section.textContent).toContain('Daño físico SA (sin arma)'))
+    expect(section.textContent).toContain('Daño físico CA (con arma)')
+  })
+
+  it('comparar: muestra el daño SA y el CA de cada combatiente, con los valores que corresponden', async () => {
+    await setUpDuel()
+    goTo('Comparar')
+    const rows = () => Array.from(document.querySelectorAll('table tr'))
+    const row = (label: string) => rows().find((r) => r.textContent?.startsWith(label))
+    await waitFor(() => expect(row('Daño físico SA (sin arma)')).toBeTruthy())
+    for (const label of ['Daño físico SA (sin arma)', 'Daño físico CA (con arma)', 'Daño mágico SA (sin arma)', 'Daño mágico CA (con arma)']) {
+      expect(row(label)).toBeTruthy()
+    }
+    const d = characterSheet(edward).derived
+    // Edward: el SA es el daño base y el CA suma el arma de referencia
+    expect(row('Daño físico SA (sin arma)')?.textContent).toContain(fmt(d.physDamage))
+    expect(row('Daño físico CA (con arma)')?.textContent).toContain(fmt(d.physDamageWithWeapon ?? d.physDamage))
   })
 })

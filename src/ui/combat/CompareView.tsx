@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { STAT_NAMES } from '../../rules'
 import type { Profile } from '../../rules'
-import { STAT_LABELS, SIDE_LABELS, fmt } from '../format'
+import { DAMAGE_LABELS, STAT_LABELS, SIDE_LABELS, fmt } from '../format'
 import { PickParticipants } from './PickParticipants'
 
 type Row = { label: string; values: (number | string)[]; numeric: boolean }
@@ -15,8 +15,10 @@ export function CompareView({ profiles }: { profiles: Profile[] }) {
     { label: 'Rango', values: shown.map((p) => p.rankName ?? '—'), numeric: false },
     { label: 'Vida', values: shown.map((p) => p.health), numeric: false },
     ...STAT_NAMES.map((s) => ({ label: STAT_LABELS[s], values: shown.map((p) => p.stats[s]), numeric: true })),
-    { label: 'Daño físico', values: shown.map((p) => p.damage.fisico), numeric: true },
-    { label: 'Daño mágico', values: shown.map((p) => p.damage.magico), numeric: true },
+    { label: DAMAGE_LABELS.physSA, values: shown.map((p) => p.damageParts.fisico.base), numeric: true },
+    { label: DAMAGE_LABELS.physCA, values: shown.map((p) => p.damage.fisico), numeric: true },
+    { label: DAMAGE_LABELS.magicSA, values: shown.map((p) => p.damageParts.magico.base), numeric: true },
+    { label: DAMAGE_LABELS.magicCA, values: shown.map((p) => p.damage.magico), numeric: true },
     { label: 'Def. física CA', values: shown.map((p) => p.defense.fisico.ca), numeric: true },
     { label: 'Def. física SA', values: shown.map((p) => p.defense.fisico.sa), numeric: true },
     { label: 'Def. mágica CA', values: shown.map((p) => p.defense.magico.ca), numeric: true },

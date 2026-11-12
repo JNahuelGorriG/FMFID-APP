@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { OWNED_SORT_LABELS, STAT_NAMES, characterSheet, ownedDotes, ownedType, sortOwned, splitEnergy } from '../rules'
 import type { OwnedSort } from '../rules'
 import { doteRepo, repo } from './data'
-import { DOTE_TYPE_LABELS, STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue, slotLabel } from './format'
+import { DAMAGE_LABELS, DOTE_TYPE_LABELS, STAT_LABELS, TIER_LABELS, describePath, fmt, fmtOrDash, fmtValue, slotLabel } from './format'
 import { SelectField } from './fields'
 import { DoteInfo } from './DoteParts'
 import { CollapseAll, Section } from './Section'
@@ -153,9 +153,13 @@ export function SheetScreen({ id, onBack, onEdit, onOpenTree }: Props) {
         <dl className="derived">
           <dt>Promedio de stats</dt>
           <dd>{fmt(sheet.average)}</dd>
-          <dt>Daño físico con arma</dt>
+          <dt>{DAMAGE_LABELS.physSA}</dt>
+          <dd>{fmt(d.physDamage)}</dd>
+          <dt>{DAMAGE_LABELS.physCA}</dt>
           <dd>{fmtOrDash(d.physDamageWithWeapon)}</dd>
-          <dt>Daño mágico con arma</dt>
+          <dt>{DAMAGE_LABELS.magicSA}</dt>
+          <dd>{fmt(d.magicDamage)}</dd>
+          <dt>{DAMAGE_LABELS.magicCA}</dt>
           <dd>{fmtOrDash(d.magicDamageWithWeapon)}</dd>
           <dt>Defensa física CA</dt>
           <dd>{fmt(d.physDefenseCA)}</dd>

@@ -47,7 +47,7 @@ import { SpiritCard } from './SpiritCard'
 import { StatCapsCard } from './StatCapsCard'
 import { WeaponCard } from './WeaponCard'
 import { NumberField, SelectField, Stepper } from './fields'
-import { STAT_LABELS, describeDuration, fmt, woundsText } from './format'
+import { DAMAGE_LABELS, STAT_LABELS, describeDuration, fmt, woundsText } from './format'
 import { CollapseAll, Section } from './Section'
 
 interface Props {
@@ -242,10 +242,10 @@ function PcPanel({
     if (view.stats[s] !== sheet.totals[s]) rows.push([STAT_LABELS[s], sheet.totals[s], view.stats[s]])
   }
   const pairs: [string, number | null, number | null][] = [
-    ['Daño físico', sheet.derived.physDamage, view.derived.physDamage],
-    ['Daño físico con arma', sheet.derived.physDamageWithWeapon, view.derived.physDamageWithWeapon],
-    ['Daño mágico', sheet.derived.magicDamage, view.derived.magicDamage],
-    ['Daño mágico con arma', sheet.derived.magicDamageWithWeapon, view.derived.magicDamageWithWeapon],
+    [DAMAGE_LABELS.physSA, sheet.derived.physDamage, view.derived.physDamage],
+    [DAMAGE_LABELS.physCA, sheet.derived.physDamageWithWeapon, view.derived.physDamageWithWeapon],
+    [DAMAGE_LABELS.magicSA, sheet.derived.magicDamage, view.derived.magicDamage],
+    [DAMAGE_LABELS.magicCA, sheet.derived.magicDamageWithWeapon, view.derived.magicDamageWithWeapon],
     ['Defensa física CA', sheet.derived.physDefenseCA, view.derived.physDefenseCA],
     ['Defensa física SA', sheet.derived.physDefenseSA, view.derived.physDefenseSA],
     ['Defensa mágica CA', sheet.derived.magicDefenseCA, view.derived.magicDefenseCA],
@@ -682,8 +682,10 @@ function NpcPanel({
     if (view.stats[s] !== view.natural.stats[s]) rows.push([STAT_LABELS[s], view.natural.stats[s], view.stats[s]])
   }
   const pairs: [string, number, number][] = [
-    ['Daño físico con arma', view.natural.physDamageWithWeapon, view.sheet.physDamageWithWeapon],
-    ['Daño mágico con arma', view.natural.magicDamageWithWeapon, view.sheet.magicDamageWithWeapon],
+    [DAMAGE_LABELS.physSA, view.natural.physDamage, view.sheet.physDamage],
+    [DAMAGE_LABELS.physCA, view.natural.physDamageWithWeapon, view.sheet.physDamageWithWeapon],
+    [DAMAGE_LABELS.magicSA, view.natural.magicDamage, view.sheet.magicDamage],
+    [DAMAGE_LABELS.magicCA, view.natural.magicDamageWithWeapon, view.sheet.magicDamageWithWeapon],
     ['Defensa física CA', view.natural.physDefenseCA, view.sheet.physDefenseCA],
     ['Defensa física SA', view.natural.physDefenseSA, view.sheet.physDefenseSA],
     ['Defensa mágica CA', view.natural.magicDefenseCA, view.sheet.magicDefenseCA],

@@ -34,6 +34,9 @@ describe('informe de stats', () => {
     const derived = statsReport([edward], { ...off, derived: true })
     expect(derived).toContain('DAÑO Y DEFENSAS')
     expect(derived).toContain('Daño físico:')
+    // el daño sin arma (SA) y el daño con arma (CA), físico y mágico
+    expect(derived).toMatch(/Daño físico: [\d.,]+ SA \(sin arma\) · [\d.,—]+ CA \(con arma\)/)
+    expect(derived).toMatch(/Daño mágico: [\d.,]+ SA \(sin arma\) · [\d.,—]+ CA \(con arma\)/)
     expect(derived).toContain('Defensa mágica:')
 
     const techniques = statsReport([edward], { ...off, techniques: true })

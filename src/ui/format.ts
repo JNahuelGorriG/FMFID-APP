@@ -261,3 +261,14 @@ export function slotLabel(nodeId: string): string {
   const place = slotPlace(nodeId)
   return place ? `${BRANCH_LABELS[place.branch]} · etapa ${place.stage} · nodo ${place.node}` : nodeId
 }
+
+/**
+ * Cómo se llama cada daño: SA es el daño sin arma y CA el daño con arma (el mismo criterio que las defensas, donde
+ * SA es la natural y CA la que lleva armadura).
+ */
+export const DAMAGE_LABELS = {
+  physSA: 'Daño físico SA (sin arma)',
+  physCA: 'Daño físico CA (con arma)',
+  magicSA: 'Daño mágico SA (sin arma)',
+  magicCA: 'Daño mágico CA (con arma)',
+} as const
