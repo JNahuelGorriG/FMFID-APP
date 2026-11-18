@@ -87,10 +87,55 @@ export async function importBackup(db: AppDB, data: unknown): Promise<void> {
 
 const norm = (name: string): string => name.trim().toLowerCase()
 
+/** Qué hacer con una lista: no tocarla, agregar solo lo que no existe, o agregar y actualizar lo existente. */
+export type ExcelMode = 'no' | 'nuevos' | 'todo'
+
+export interface ExcelSelection {
+  characters: ExcelMode
+  npcs: ExcelMode
+  /** Reemplazar las tablas de precios. */
+  prices: boolean
+}
+
+export const ALL_FROM_EXCEL: ExcelSelection = { characters: 'todo', npcs: 'todo', prices: true }
+
 export interface ExcelImportResult {
+  /** Personajes y NPCs escritos (agregados + actualizados). */
   characters: number
   npcs: number
+  newCharacters: number
+  newNpcs: number
   referenceSheets: boolean
+}
+
+export interface ExcelPreview {
+  characters: { total: number; nuevos: number }
+  npcs: { total: number; nuevos: number }
+  prices: boolean
+}
+
+const keyOf = (name: string): string => name.trim().toLowerCase()
+
+/** Cuenta qué trae el archivo y cuánto es nuevo respecto de lo que ya hay en la app. */
+export async function previewExcel(db: AppDB, data: unknown): Promise<ExcelPreview> {
+  if (!isBackup(data)) throw new Error('El archivo no es un respaldo de FMFID APP.')
+  const [chars, npcs] = await Promise.all([db.characters.toArray(), db.npcs.toArray()])
+  const fresh = (incoming: { name: string }[], existing: { name: string }[]) => {
+    const pool = new Map<string, number>()
+    for (const e of existing) pool.set(keyOf(e.name), (pool.get(keyOf(e.name)) ?? 0) + 1)
+    let count = 0
+    for (const item of incoming) {
+      const left = pool.get(keyOf(item.name)) ?? 0
+      if (left > 0) pool.set(keyOf(item.name), left - 1)
+      else count++
+    }
+    return count
+  }
+  return {
+    characters: { total: data.characters.length, nuevos: fresh(data.characters, chars) },
+    npcs: { total: (data.npcs ?? []).length, nuevos: fresh(data.npcs ?? [], npcs) },
+    prices: (data.settings ?? []).some((x) => x.key === 'referenceSheets'),
+  }
 }
 
 /**
@@ -115,7 +160,11 @@ function keepTemporaryTraining(incoming: Character['sources'], existing: Charact
   return merged
 }
 
-export async function importFromExcel(db: AppDB, data: unknown): Promise<ExcelImportResult> {
+export async function importFromExcel(
+  db: AppDB,
+  data: unknown,
+  selection: ExcelSelection = ALL_FROM_EXCEL,
+): Promise<ExcelImportResult> {
   if (!isBackup(data)) throw new Error('El archivo no es un respaldo de FMFID APP.')
   if (data.version > BACKUP_VERSION) {
     throw new Error('El respaldo es de una versión más nueva de la app.')
@@ -128,37 +177,57 @@ export async function importFromExcel(db: AppDB, data: unknown): Promise<ExcelIm
       return (name: string): T | undefined => pool.get(norm(name))?.shift()
     }
 
+    let newCharacters = 0
+    let newNpcs = 0
+
     const takeChar = takeBy(await db.characters.toArray())
-    const characters = data.characters.map((incoming) => {
-      const existing = takeChar(incoming.name)
-      if (!existing) return incoming
-      return {
-        ...incoming,
-        id: existing.id,
-        createdAt: existing.createdAt,
-        className: incoming.className || existing.className,
-        playerName: incoming.playerName || existing.playerName,
-        sources: keepTemporaryTraining(incoming.sources, existing.sources),
+    const characters: Character[] = []
+    if (selection.characters !== 'no') {
+      for (const incoming of data.characters) {
+        const existing = takeChar(incoming.name)
+        if (!existing) {
+          newCharacters++
+          characters.push(incoming)
+        } else if (selection.characters === 'todo') {
+          characters.push({
+            ...incoming,
+            id: existing.id,
+            createdAt: existing.createdAt,
+            className: incoming.className || existing.className,
+            playerName: incoming.playerName || existing.playerName,
+            sources: keepTemporaryTraining(incoming.sources, existing.sources),
+          })
+        }
       }
-    })
+    }
 
     const takeNpc = takeBy(await db.npcs.toArray())
-    const npcs = (data.npcs ?? []).map((incoming) => {
-      const existing = takeNpc(incoming.name)
-      if (!existing) return normalizeNpc(incoming)
-      return normalizeNpc({
-        ...incoming,
-        id: existing.id,
-        createdAt: existing.createdAt,
-        kind: existing.kind ?? incoming.kind,
-        combat: incoming.combat ?? existing.combat,
-      })
-    })
+    const npcs: Npc[] = []
+    if (selection.npcs !== 'no') {
+      for (const incoming of data.npcs ?? []) {
+        const existing = takeNpc(incoming.name)
+        if (!existing) {
+          newNpcs++
+          npcs.push(normalizeNpc(incoming))
+        } else if (selection.npcs === 'todo') {
+          npcs.push(
+            normalizeNpc({
+              ...incoming,
+              id: existing.id,
+              createdAt: existing.createdAt,
+              kind: existing.kind ?? incoming.kind,
+              combat: incoming.combat ?? existing.combat,
+              variants: existing.variants,
+            }),
+          )
+        }
+      }
+    }
 
     await db.characters.bulkPut(characters)
     await db.npcs.bulkPut(npcs)
-    const sheets = (data.settings ?? []).find((x) => x.key === 'referenceSheets')
+    const sheets = selection.prices ? (data.settings ?? []).find((x) => x.key === 'referenceSheets') : undefined
     if (sheets) await db.settings.put(sheets)
-    return { characters: characters.length, npcs: npcs.length, referenceSheets: sheets !== undefined }
+    return { characters: characters.length, npcs: npcs.length, newCharacters, newNpcs, referenceSheets: sheets !== undefined }
   })
 }

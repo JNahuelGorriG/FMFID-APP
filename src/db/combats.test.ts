@@ -337,7 +337,7 @@ describe('actualizar desde el Excel', () => {
       db,
       excelFile({ characters: [{ ...edward, id: 'e1', name: 'Nuevo' }], npcs: [{ ...newNpcFile('Alice') }] }),
     )
-    expect(result).toEqual({ characters: 1, npcs: 1, referenceSheets: false })
+    expect(result).toEqual({ characters: 1, npcs: 1, newCharacters: 1, newNpcs: 1, referenceSheets: false })
     expect(await db.characters.count()).toBe(1)
     expect(await db.npcs.count()).toBe(1)
   })

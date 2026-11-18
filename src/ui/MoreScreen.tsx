@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
-import { db, exportBackup, importBackup, importFromExcel } from '../db'
+import { ALL_FROM_EXCEL, db, exportBackup, importBackup, importFromExcel, previewExcel } from '../db'
+import type { ExcelMode, ExcelPreview, ExcelSelection } from '../db'
+import { isZip, readImportFile } from '../excel/loadFile'
 import { SKILL_TYPE_ID } from '../rules'
 import { PICKABLE_TARGETS, SPIRIT_TYPE_ID, TECHNIQUES } from '../rules'
 import type { EffectType, TechniqueTarget, Techniques } from '../rules'
@@ -127,6 +129,65 @@ function TechniqueTargetsEditor() {
   )
 }
 
+const MODE_OPTIONS: { value: ExcelMode; label: string }[] = [
+  { value: 'no', label: 'No tocar' },
+  { value: 'nuevos', label: 'Solo agregar los nuevos' },
+  { value: 'todo', label: 'Agregar y actualizar los existentes' },
+]
+
+function ExcelPanel({
+  pending,
+  selection,
+  setSelection,
+  onApply,
+  onCancel,
+}: {
+  pending: { preview: ExcelPreview; name: string; problems: number }
+  selection: ExcelSelection
+  setSelection: (s: ExcelSelection) => void
+  onApply: () => void
+  onCancel: () => void
+}) {
+  const { preview } = pending
+  return (
+    <div className="card" aria-label="Qué actualizar">
+      <p>
+        <strong>{pending.name}</strong>
+      </p>
+      <p className="muted small">Elige qué se actualiza. Lo que dejes en "No tocar" queda exactamente como está en la app.</p>
+      <SelectField
+        label={`Personajes (${preview.characters.total} en el archivo, ${preview.characters.nuevos} nuevos)`}
+        value={selection.characters}
+        options={MODE_OPTIONS}
+        onChange={(v) => setSelection({ ...selection, characters: v })}
+      />
+      <SelectField
+        label={`NPCs (${preview.npcs.total} en el archivo, ${preview.npcs.nuevos} nuevos)`}
+        value={selection.npcs}
+        options={MODE_OPTIONS}
+        onChange={(v) => setSelection({ ...selection, npcs: v })}
+      />
+      {preview.prices && (
+        <label className="check">
+          <input type="checkbox" checked={selection.prices} onChange={(e) => setSelection({ ...selection, prices: e.target.checked })} />
+          Reemplazar las tablas de precios
+        </label>
+      )}
+      {pending.problems > 0 && (
+        <p className="muted small">El Excel tiene {pending.problems} diferencias de cálculo con la app en los personajes.</p>
+      )}
+      <div className="actions">
+        <button className="btn" onClick={onApply}>
+          Aplicar
+        </button>
+        <button className="btn secondary" onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
@@ -144,23 +205,50 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
   }
 
   const importMode = useRef<'completo' | 'excel'>('completo')
+  const [pending, setPending] = useState<{ data: unknown; preview: ExcelPreview; name: string; problems: number } | null>(null)
+  const [selection, setSelection] = useState<ExcelSelection>(ALL_FROM_EXCEL)
 
   async function handleImport(file: File, mode: 'completo' | 'excel') {
-    const ok = window.confirm(
-      mode === 'completo'
-        ? 'Importar reemplaza TODOS los datos de este dispositivo (personajes, NPCs, combates y ajustes) por los del archivo. ¿Continuar?'
-        : 'Se actualizan los personajes, NPCs y precios con los datos del archivo. Se conservan tus combates, el historial y lo que hayas creado en la app. ¿Continuar?',
-    )
-    if (!ok) return
     try {
-      const data = JSON.parse(await file.text())
       if (mode === 'completo') {
-        await importBackup(db, data)
+        const bytes = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+        if (isZip(bytes)) {
+          setMessage('Ese archivo es un Excel. Usa "Actualizar desde el Excel" para cargarlo.')
+          return
+        }
+        const ok = window.confirm(
+          'Importar reemplaza TODOS los datos de este dispositivo (personajes, NPCs, combates y ajustes) por los del archivo. ¿Continuar?',
+        )
+        if (!ok) return
+        await importBackup(db, JSON.parse(await file.text()))
         setMessage('Respaldo importado.')
-      } else {
-        const r = await importFromExcel(db, data)
-        setMessage(`Actualizado: ${r.characters} personajes y ${r.npcs} NPCs${r.referenceSheets ? ', con precios' : ''}.`)
+        return
       }
+      // Actualizar desde el Excel: primero se lee y se muestra qué trae; recién ahí se elige qué aplicar.
+      const { data, problems } = await readImportFile(file)
+      const preview = await previewExcel(db, data)
+      setSelection({
+        characters: preview.characters.total > 0 ? 'todo' : 'no',
+        npcs: preview.npcs.total > 0 ? 'todo' : 'no',
+        prices: preview.prices,
+      })
+      setPending({ data, preview, name: file.name, problems })
+      setMessage('')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo importar el archivo.')
+    }
+  }
+
+  async function applyExcel() {
+    if (!pending) return
+    try {
+      const r = await importFromExcel(db, pending.data, selection)
+      const parts: string[] = []
+      if (selection.characters !== 'no') parts.push(`personajes: ${r.newCharacters} nuevos, ${r.characters - r.newCharacters} actualizados`)
+      if (selection.npcs !== 'no') parts.push(`NPCs: ${r.newNpcs} nuevos, ${r.npcs - r.newNpcs} actualizados`)
+      if (r.referenceSheets) parts.push('precios reemplazados')
+      setMessage(parts.length > 0 ? `Listo. ${parts.join(' · ')}.` : 'No elegiste nada para actualizar.')
+      setPending(null)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo importar el archivo.')
     }
@@ -190,7 +278,8 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
       <Section title="Respaldo">
         <p className="muted small">
           Los datos viven solo en este dispositivo. Exporta un respaldo de vez en cuando.
-          "Actualizar desde el Excel" carga el archivo que genera el importador sin borrar tus combates.
+          "Actualizar desde el Excel" lee tu archivo .xlsx directamente, te muestra qué trae y tú eliges qué
+          actualizar (personajes, NPCs, precios). Tus combates y el historial no se tocan.
         </p>
         <div className="actions">
           <button className="btn" onClick={handleExport}>
@@ -206,7 +295,7 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
         <input
           ref={fileInput}
           type="file"
-          accept="application/json,.json"
+          accept=".xlsx,.xlsm,.json,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0]
@@ -214,6 +303,7 @@ export function MoreScreen({ onOpenTables }: { onOpenTables: () => void }) {
             e.target.value = ''
           }}
         />
+        {pending && <ExcelPanel pending={pending} selection={selection} setSelection={setSelection} onApply={() => void applyExcel()} onCancel={() => setPending(null)} />}
         {message && (
           <p className="small" role="status">
             {message}
