@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { defaultEnemyProfile, newNpcTemplate } from '../rules'
+import { combatOptions, defaultEnemyProfile, newNpcTemplate } from '../rules'
 import type { NpcKind } from '../rules'
 import { npcRepo } from './data'
 
@@ -82,11 +82,15 @@ export function NpcsScreen({ onOpen, onCreated, onGoMore }: Props) {
                       {[n.role !== '-' ? n.role : '', n.realm !== '-' ? n.realm : '', n.race]
                         .filter(Boolean)
                         .join(' · ') || 'Sin datos'}
-                      {n.combat ? ' · con perfil de combate' : ''}
+                      {combatOptions(n).length > 1
+                        ? ` · ${combatOptions(n).length} variantes`
+                        : n.combat
+                          ? ' · con perfil de combate'
+                          : ''}
                     </span>
                   </span>
-                  {(n.combat?.rank || (n.rank && n.rank !== '-')) && (
-                    <span className="chip">{n.rank && n.rank !== '-' ? n.rank : n.combat?.rank}</span>
+                  {(combatOptions(n)[0]?.combat.rank || (n.rank && n.rank !== '-')) && (
+                    <span className="chip">{n.rank && n.rank !== '-' ? n.rank : combatOptions(n)[0]?.combat.rank}</span>
                   )}
                 </button>
               </li>

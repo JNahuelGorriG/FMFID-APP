@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { RANKS, addNpcParticipant, addPcParticipant } from '../../rules'
+import { RANKS, addNpcParticipant, addPcParticipant, combatOptions, hasCombat, variantName } from '../../rules'
 import type { Combat, NpcKind } from '../../rules'
 import { combatRepo, npcRepo, repo } from '../data'
 import { NumberField, OptionalNumberField, SelectField, TextField } from '../fields'
@@ -28,10 +28,13 @@ export function AddView({ combat }: { combat: Combat }) {
   const [side, setSide] = useState<'enemigo' | 'aliado'>('enemigo')
 
   const found = useLiveQuery(() => npcRepo.list(query, kind), [query, kind])
-  const results = (found ?? []).filter((n) => n.combat !== null)
+  const results = (found ?? []).filter((n) => hasCombat(n))
   const shown = results.slice(0, MAX_RESULTS)
   const npcChoice = results.find((n) => n.id === npcId)
-  const rankChoice = rank ?? npcChoice?.combat?.rank ?? 'E'
+  const [variantId, setVariantId] = useState('')
+  const options = npcChoice ? combatOptions(npcChoice) : []
+  const variantChoice = options.find((v) => v.id === variantId) ?? options[0]
+  const rankChoice = rank ?? variantChoice?.combat.rank ?? 'E'
 
   return (
     <>
@@ -91,11 +94,14 @@ export function AddView({ combat }: { combat: Combat }) {
                 className={n.id === npcChoice?.id ? 'selected' : ''}
                 onClick={() => {
                   setNpcId(n.id)
+                  setVariantId('')
                   setRank(null)
                 }}
               >
                 <span>{n.name}</span>
-                <span className="muted small">{n.combat?.rank}</span>
+                <span className="muted small">
+                  {combatOptions(n).length > 1 ? `${combatOptions(n).length} variantes` : combatOptions(n)[0]?.combat.rank}
+                </span>
               </button>
             ))}
           </div>
@@ -109,13 +115,24 @@ export function AddView({ combat }: { combat: Combat }) {
             <p className="small">
               Elegido: <strong>{npcChoice.name}</strong>
             </p>
+            {options.length > 1 && (
+              <SelectField
+                label="Variante"
+                value={variantChoice?.id ?? ''}
+                options={options.map((v) => ({ value: v.id, label: `${v.label || 'Base'} · ${v.combat.rank}` }))}
+                onChange={(v) => {
+                  setVariantId(v)
+                  setRank(null)
+                }}
+              />
+            )}
             <SelectField
               label="Rango en este combate"
               value={rankChoice}
               options={RANK_OPTIONS}
               onChange={setRank}
             />
-            <TextField label="Nombre en el combate" value={npcName} onChange={setNpcName} placeholder={npcChoice.name} />
+            <TextField label="Nombre en el combate" value={npcName} onChange={setNpcName} placeholder={variantName(npcChoice.name, variantChoice?.label ?? '')} />
             <div className="grid-2">
               <NumberField label="Cantidad" integer value={qty} onChange={(v) => setQty(Math.max(1, v))} />
               <OptionalNumberField label="Iniciativa del NPC" value={npcInit} onChange={setNpcInit} />
@@ -132,9 +149,9 @@ export function AddView({ combat }: { combat: Combat }) {
             <button
               className="btn secondary"
               onClick={() => {
-                if (!npcChoice.combat) return
-                const base = npcName.trim() || npcChoice.name
-                const profile = { ...npcChoice.combat, rank: rankChoice }
+                if (!variantChoice) return
+                const base = npcName.trim() || variantName(npcChoice.name, variantChoice.label)
+                const profile = { ...variantChoice.combat, rank: rankChoice }
                 void combatRepo.update(combat.id, (c) => {
                   let next = c
                   for (let i = 1; i <= qty; i++) {

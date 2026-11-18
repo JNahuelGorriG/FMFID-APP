@@ -6,6 +6,7 @@ import {
   defaultEnemyProfile,
   enemySheet,
   suggestedCombatRank,
+  toVariants,
 } from '../rules'
 import type { ArmorType, EnemyProfile, Npc, NpcKind, StatName, Tier, WeaponSize } from '../rules'
 import { CheckField, NumberField, OptionalNumberField, SelectField, TextAreaField, TextField } from './fields'
@@ -52,10 +53,40 @@ function NpcForm({
   const dirty = JSON.stringify(draft) !== JSON.stringify(original)
 
   const set = <K extends keyof Npc>(key: K, value: Npc[K]) => setDraft((d) => ({ ...d, [key]: value }))
-  const setCombat = (patch: Partial<EnemyProfile>) =>
-    setDraft((d) => (d.combat ? { ...d, combat: { ...d.combat, ...patch } } : d))
+  const variants = draft.variants ?? []
+  const [activeId, setActiveId] = useState(variants[0]?.id ?? '')
+  const active = variants.find((v) => v.id === activeId) ?? variants[0]
+  // Perfil que se está editando: el de la variante elegida o el único de la ficha.
+  const current: EnemyProfile | null = active ? active.combat : draft.combat
 
-  const preview = draft.combat ? enemySheet(draft.combat) : null
+  const setCombat = (patch: Partial<EnemyProfile>) =>
+    setDraft((d) => {
+      const vs = d.variants ?? []
+      if (vs.length > 0) {
+        const id = vs.find((v) => v.id === activeId)?.id ?? vs[0].id
+        return { ...d, variants: vs.map((v) => (v.id === id ? { ...v, combat: { ...v.combat, ...patch } } : v)) }
+      }
+      return d.combat ? { ...d, combat: { ...d.combat, ...patch } } : d
+    })
+
+  function addVariant() {
+    const base = toVariants(draft)
+    const source = (base.variants ?? []).find((v) => v.id === activeId) ?? (base.variants ?? [])[0]
+    if (!source) return
+    const created = { id: crypto.randomUUID(), label: 'Nueva variante', combat: structuredClone(source.combat) }
+    setDraft({ ...base, variants: [...(base.variants ?? []), created] })
+    setActiveId(created.id)
+  }
+
+  function removeVariant() {
+    if (!active) return
+    if (!window.confirm(`¿Quitar la variante "${active.label || 'Base'}"?`)) return
+    const rest = variants.filter((v) => v.id !== active.id)
+    setDraft({ ...draft, variants: rest, combat: rest.length === 0 ? active.combat : null })
+    setActiveId(rest[0]?.id ?? '')
+  }
+
+  const preview = current ? enemySheet(current) : null
 
   async function save() {
     await npcRepo.save(draft)
@@ -105,17 +136,51 @@ function NpcForm({
       <Section title="Perfil de combate">
         <CheckField
           label="Tiene perfil de combate"
-          checked={draft.combat !== null}
-          onChange={(on) => set('combat', on ? defaultEnemyProfile(suggestedCombatRank(draft)) : null)}
+          checked={current !== null}
+          onChange={(on) => setDraft({ ...draft, variants: undefined, combat: on ? defaultEnemyProfile(suggestedCombatRank(draft)) : null })}
         />
+        {current && (
+          <>
+            <p className="muted small">
+              Variantes: úsalas cuando un mismo enemigo tiene alineaciones distintas (por ejemplo Destreza, Guerrero,
+              Tanque). Cada una tiene sus propios stats.
+            </p>
+            {variants.length > 0 && (
+              <div className="seg" role="group" aria-label="Variantes">
+                {variants.map((v) => (
+                  <button key={v.id} className={v.id === active?.id ? 'tab active' : 'tab'} onClick={() => setActiveId(v.id)}>
+                    {v.label || 'Base'}
+                  </button>
+                ))}
+              </div>
+            )}
+            {active && (
+              <TextField
+                label="Alineación de esta variante"
+                value={active.label}
+                onChange={(v) => setDraft({ ...draft, variants: variants.map((x) => (x.id === active.id ? { ...x, label: v } : x)) })}
+              />
+            )}
+            <div className="actions">
+              <button className="btn secondary" onClick={addVariant}>
+                {variants.length === 0 ? 'Crear variantes' : 'Agregar variante (copia de esta)'}
+              </button>
+              {active && (
+                <button className="btn danger" onClick={removeVariant}>
+                  Quitar variante
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </Section>
 
-      {draft.combat && preview && (
+      {current && preview && (
         <>
           <div className="card">
             <SelectField
               label="Rango de combate"
-              value={draft.combat.rank}
+              value={current.rank}
               options={RANK_OPTIONS}
               onChange={(v) => setCombat({ rank: v })}
             />
@@ -124,24 +189,24 @@ function NpcForm({
               Curva 3: Inteligencia y Sabiduría. El valor a mano reemplaza al de la curva.
             </p>
             {STAT_NAMES.map((name) => (
-              <StatRow key={name} name={name} profile={draft.combat as EnemyProfile} value={preview.stats[name]} setCombat={setCombat} />
+              <StatRow key={name} name={name} profile={current as EnemyProfile} value={preview.stats[name]} setCombat={setCombat} />
             ))}
           </div>
 
           <Section title="Equipo de referencia">
             <div className="grid-2">
-              <SelectField label="Arma de daño físico" value={draft.combat.physWeapon} options={WEAPON_OPTIONS} onChange={(v) => setCombat({ physWeapon: v })} />
-              <SelectField label="Arma de daño mágico" value={draft.combat.magicWeapon} options={WEAPON_OPTIONS} onChange={(v) => setCombat({ magicWeapon: v })} />
-              <SelectField label="Armadura física SA" value={draft.combat.physArmor} options={ARMOR_OPTIONS} onChange={(v) => setCombat({ physArmor: v })} />
-              <SelectField label="Armadura mágica SA" value={draft.combat.magicArmor} options={ARMOR_OPTIONS} onChange={(v) => setCombat({ magicArmor: v })} />
+              <SelectField label="Arma de daño físico" value={current.physWeapon} options={WEAPON_OPTIONS} onChange={(v) => setCombat({ physWeapon: v })} />
+              <SelectField label="Arma de daño mágico" value={current.magicWeapon} options={WEAPON_OPTIONS} onChange={(v) => setCombat({ magicWeapon: v })} />
+              <SelectField label="Armadura física SA" value={current.physArmor} options={ARMOR_OPTIONS} onChange={(v) => setCombat({ physArmor: v })} />
+              <SelectField label="Armadura mágica SA" value={current.magicArmor} options={ARMOR_OPTIONS} onChange={(v) => setCombat({ magicArmor: v })} />
             </div>
             <p className="muted small">El equipo de un enemigo es de un rango por debajo del suyo.</p>
           </Section>
 
           <Section title="Vida (puntos)">
             <div className="grid-2">
-              <NumberField label="Vida actual" integer value={draft.combat.hp.current} onChange={(v) => setCombat({ hp: { ...(draft.combat as EnemyProfile).hp, current: v } })} />
-              <NumberField label="Vida máxima" integer value={draft.combat.hp.max} onChange={(v) => setCombat({ hp: { ...(draft.combat as EnemyProfile).hp, max: v } })} />
+              <NumberField label="Vida actual" integer value={current.hp.current} onChange={(v) => setCombat({ hp: { ...(current as EnemyProfile).hp, current: v } })} />
+              <NumberField label="Vida máxima" integer value={current.hp.max} onChange={(v) => setCombat({ hp: { ...(current as EnemyProfile).hp, max: v } })} />
             </div>
           </Section>
 

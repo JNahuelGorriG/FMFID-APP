@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { STAT_NAMES, defaultEnemyProfile, enemySheet, suggestedCombatRank } from '../rules'
+import { useState } from 'react'
+import { STAT_NAMES, absorbAsVariants, combatOptions, defaultEnemyProfile, enemySheet, suggestedCombatRank } from '../rules'
 import type { Npc } from '../rules'
 import { npcRepo } from './data'
 import { DAMAGE_LABELS, STAT_LABELS, fmt } from './format'
@@ -25,9 +26,26 @@ const FIELDS: [string, keyof Npc][] = [
 
 export function NpcScreen({ id, onBack, onEdit }: Props) {
   const npc = useLiveQuery(() => npcRepo.get(id), [id])
+  const [variantId, setVariantId] = useState('')
+  const [picked, setPicked] = useState<string[]>([])
+  const others = useLiveQuery(() => npcRepo.list('', 'bestia'), [])
   if (npc === undefined) return <p className="muted">Cargando…</p>
 
-  const sheet = npc.combat ? enemySheet(npc.combat) : null
+  const options = combatOptions(npc)
+  const variant = options.find((v) => v.id === variantId) ?? options[0]
+  const combat = variant?.combat ?? null
+  const sheet = combat ? enemySheet(combat) : null
+  const candidates = (others ?? []).filter((o) => o.id !== npc.id && combatOptions(o).length > 0)
+
+  async function merge() {
+    if (!npc) return
+    const chosen = candidates.filter((o) => picked.includes(o.id))
+    if (chosen.length === 0) return
+    if (!window.confirm(`Se unirán ${chosen.length} bestia(s) como variantes de ${npc.name} y se borrarán sus entradas sueltas. ¿Seguir?`)) return
+    await npcRepo.save(absorbAsVariants(npc, chosen))
+    for (const o of chosen) await npcRepo.remove(o.id)
+    setPicked([])
+  }
 
   return (
     <section>
@@ -59,17 +77,28 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
         </dl>
       </div>
 
-      {npc.combat && sheet ? (
+      {combat && sheet ? (
         <>
-          <h2>Perfil de combate · rango {sheet.rank.name}</h2>
+          {options.length > 1 && (
+            <div className="seg" role="group" aria-label="Variantes">
+              {options.map((v) => (
+                <button key={v.id} className={v.id === variant?.id ? 'tab active' : 'tab'} onClick={() => setVariantId(v.id)}>
+                  {v.label || 'Base'}
+                </button>
+              ))}
+            </div>
+          )}
+          <h2>
+            Perfil de combate{variant?.label ? ` · ${variant.label}` : ''} · rango {sheet.rank.name}
+          </h2>
           <div className="card stats" aria-label="Stats del NPC">
             {STAT_NAMES.map((name) => (
               <div className="stat-row" key={name}>
                 <span className="stat-name">{STAT_LABELS[name]}</span>
                 <span className="muted small">
-                  {npc.combat?.overrides[name] !== undefined
+                  {combat.overrides[name] !== undefined
                     ? 'a mano'
-                    : `curva ${npc.combat?.tiers[name]}`}
+                    : `curva ${combat.tiers[name]}`}
                 </span>
                 <span className="stat-value">{fmt(sheet.stats[name])}</span>
               </div>
@@ -80,7 +109,7 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
             <div className="card tile">
               <span className="muted small">Vida</span>
               <strong>
-                {npc.combat.hp.current} / {npc.combat.hp.max}
+                {combat.hp.current} / {combat.hp.max}
               </strong>
             </div>
             <div className="card tile">
@@ -142,6 +171,27 @@ export function NpcScreen({ id, onBack, onEdit }: Props) {
               <dd>{sheet.techniques.reiatsu}</dd>
             </dl>
           </Section>
+          {npc.kind === 'bestia' && candidates.length > 0 && (
+            <Section title="Unir otras bestias como variantes" defaultOpen={false}>
+              <p className="muted small">
+                Marca las entradas sueltas (por ejemplo "Anti Esper Tanque") para meterlas aquí como variantes. La
+                etiqueta sale de lo que sobra del nombre.
+              </p>
+              {candidates.map((o) => (
+                <label key={o.id} className="check">
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(o.id)}
+                    onChange={(e) => setPicked(e.target.checked ? [...picked, o.id] : picked.filter((x) => x !== o.id))}
+                  />
+                  {o.name}
+                </label>
+              ))}
+              <button className="btn secondary" disabled={picked.length === 0} onClick={() => void merge()}>
+                Unir seleccionadas
+              </button>
+            </Section>
+          )}
         </>
       ) : (
         <div className="card">
