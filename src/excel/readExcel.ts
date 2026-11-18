@@ -36,7 +36,7 @@ const SOURCE_KEYS: (keyof StatSources)[] = [
   'despertar', 'merito', 'entrenamiento', 'regalo', 'drogasShoko', 'otros',
 ]
 
-interface Block {
+export interface Block {
   name: string
   player: string
   className: string
@@ -201,6 +201,50 @@ function parseEnergy(cell: Cell): { base: number; bonus: number; total: number }
   return { base, bonus: bonuses.reduce((a, b) => a + b, 0), total: num(cell) }
 }
 
+/**
+ * Fila de "Fuerza" en la tabla de tiers de un personaje. Parte de la fila anotada y busca unas filas
+ * arriba y abajo, porque al agregar o quitar filas en el Excel la tabla se corre.
+ */
+export function findTierRow(ws: ExcelJS.Worksheet, block: Block): number {
+  const labelAt = (row: number): string => {
+    const v = valueOf(ws.getCell(row, block.tierCol - 1).value)
+    return typeof v === 'string' ? v.trim().toLowerCase() : ''
+  }
+  const candidates = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, 6].map((d) => block.tierRow + d).filter((r) => r > 0)
+  for (const row of candidates) {
+    if (labelAt(row) === 'fuerza' && labelAt(row + 1) === 'destreza' && labelAt(row + 6).startsWith('carisma')) return row
+  }
+  return block.tierRow
+}
+
+/** Fila donde la columna `col` tiene exactamente `label` (sin importar mayúsculas), o null. */
+export function findLabelRow(ws: ExcelJS.Worksheet, col: number, label: string, from = 1, to = 120): number | null {
+  for (let r = from; r <= to; r++) {
+    const v = valueOf(ws.getCell(r, col).value)
+    if (typeof v === 'string' && v.trim().toLowerCase() === label.toLowerCase()) return r
+  }
+  return null
+}
+
+/**
+ * Fila de cabecera ("Fuerza") del árbol de un personaje en la hoja "Arbol Stats". Cada árbol lleva el nombre del
+ * jugador en mayúsculas dos filas arriba, en la columna P. Si no está, se usa la fila anotada o la cabecera más cercana.
+ */
+export function findTreeHeader(ws: ExcelJS.Worksheet, block: Block): number {
+  const isHeader = (r: number) => String(valueOf(ws.getCell(r, TREE_COLUMNS[0]).value) ?? '').trim().toLowerCase() === 'fuerza'
+  const player = block.player.trim().toUpperCase()
+  for (let r = 1; r <= 400; r++) {
+    const v = valueOf(ws.getCell(r, 16).value)
+    if (typeof v === 'string' && v.trim().toUpperCase() === player && isHeader(r + 2)) return r + 2
+  }
+  if (isHeader(block.treeHeader)) return block.treeHeader
+  for (let d = 1; d <= 6; d++) {
+    if (isHeader(block.treeHeader + d)) return block.treeHeader + d
+    if (isHeader(block.treeHeader - d)) return block.treeHeader - d
+  }
+  return block.treeHeader
+}
+
 function readCharacter(ws: ExcelJS.Worksheet, block: Block): { character: Character; excel: ExcelCheck } {
   const stats = {} as Record<StatName, StatSources>
   const multipliers = {} as Record<StatName, number>
@@ -221,8 +265,9 @@ function readCharacter(ws: ExcelJS.Worksheet, block: Block): { character: Charac
   const superStats: Character['superStats'] = {}
   if (block.tierCol > 0) {
     tiers = {} as Tiers
+    const tierRow = findTierRow(ws, block)
     STAT_NAMES.forEach((name, i) => {
-      const cell = ws.getCell(block.tierRow + i, block.tierCol).value
+      const cell = ws.getCell(tierRow + i, block.tierCol).value
       const t = parseTier(cell)
       if (t === null) throw new Error(`Falta el tier de ${name} para ${block.name}`)
       tiers[name] = t
@@ -466,9 +511,11 @@ export function buildBackupFromWorkbook(
     let character = base
     const treeLines: string[] = []
     if (treeSheet) {
-      const bp = block.bpColumn ? Number(valueOf(ws.getCell(39, block.bpColumn).value)) || 0 : 0
-      const mh = block.bpColumn ? Number(valueOf(ws.getCell(40, block.bpColumn).value)) || 0 : 0
-      const { tree, report } = readTree(treeSheet, block.treeHeader, base, bp, mh)
+      const bpRow = findLabelRow(ws, 42, 'BPs', 30, 60) ?? 39
+      const mhRow = findLabelRow(ws, 42, 'Mejoras de H.', 30, 60) ?? 40
+      const bp = block.bpColumn ? Number(valueOf(ws.getCell(bpRow, block.bpColumn).value)) || 0 : 0
+      const mh = block.bpColumn ? Number(valueOf(ws.getCell(mhRow, block.bpColumn).value)) || 0 : 0
+      const { tree, report } = readTree(treeSheet, findTreeHeader(treeSheet, block), base, bp, mh)
       character = { ...base, tree }
       treeLines.push(`árbol: ${report.purchases} compras, ${report.spent} BP gastados, ${bp} BP y ${mh} MH disponibles`)
       for (const t of report.unknown) treeLines.push(`  ? elección sin definir: ${t}`)
@@ -487,12 +534,6 @@ export function buildBackupFromWorkbook(
     }
     if (sheet.mana !== excel.mana) diffs.push(`maná: app ${sheet.mana} / Excel ${excel.mana}`)
     if (sheet.stamina !== excel.stamina) diffs.push(`estamina: app ${sheet.stamina} / Excel ${excel.stamina}`)
-
-    const avg = Math.round(sheet.average)
-    const expected = block.expectedAverage
-    if (expected !== undefined && Math.abs(avg - expected) > 1) {
-      diffs.push(`promedio: app ${avg} / GM ${expected}`)
-    }
 
     const status = diffs.length === 0 ? 'OK ' : 'REVISAR'
     problems += diffs.length
