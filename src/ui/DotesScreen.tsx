@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
 import { db, exportDotes, importDotes, loadUniqueDotes } from '../db'
+import { readDotesFile } from '../doteimport/readers'
+import type { DoteSource } from '../doteimport/readers'
 import {
   DOTE_SORT_LABELS,
   DOTE_TIERS,
@@ -37,6 +39,8 @@ const KIND_OPTIONS = [
   { value: 'todos' as const, label: 'Todos los usos' },
   ...(Object.keys(USE_KIND_LABELS) as UseKind[]).map((k) => ({ value: k as UseKind | 'todos', label: USE_KIND_LABELS[k] })),
 ]
+
+const SOURCE_LABELS: Record<DoteSource, string> = { json: 'el archivo de dotes', pdf: 'el PDF', word: 'el Word', texto: 'el texto' }
 
 const emptyDote = (type: DoteType): NewDote => ({ tier: 'E', name: '', type, use: 'Pasiva', description: '' })
 
@@ -83,9 +87,12 @@ export function DotesScreen() {
 
   async function load(file: File) {
     try {
-      const r = await importDotes(db, JSON.parse(await file.text()))
+      const read = await readDotesFile(file)
+      const r = await importDotes(db, read.file)
+      const renamed = r.renamed ? `, ${r.renamed} con otro nombre` : ''
+      const skipped = read.skipped > 0 ? ` ${read.skipped} fila(s) incompleta(s) se saltearon.` : ''
       setMessage(
-        `Dotes: ${r.added} nuevas, ${r.updated} actualizadas y ${r.unchanged} sin cambios${r.sheets > 0 ? `, y ${r.sheets} hoja(s) de reglas` : ''}.`,
+        `Leí ${SOURCE_LABELS[read.source]}: ${r.added} dotes nuevas, ${r.updated} actualizadas${renamed} y ${r.unchanged} sin cambios${r.sheets > 0 ? `, y ${r.sheets} hoja(s) de reglas` : ''}.${skipped}`,
       )
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudo importar el archivo.')
@@ -306,9 +313,10 @@ export function DotesScreen() {
 
       <Section title="Importar y exportar" defaultOpen={false}>
         <p className="muted small">
-          Un archivo de dotes sirve para cargar muchas de una vez (por ejemplo, desde tu Word) o para pasarlas a otro
-          dispositivo. Al importar, las dotes nuevas se agregan, las que ya estaban (mismo tipo y nombre) se actualizan y
-          nunca se borra nada. Las dotes también forman parte del respaldo completo de Más.
+          Puedes importar el PDF o el Word de las dotes (con tablas de Tier, Dote, Uso y Descripción bajo títulos como
+          "Fuerza" o "Dotes únicas"), un texto en Markdown o el .json de la app. Al importar, las dotes nuevas se
+          agregan, las que ya estaban (mismo tipo y nombre) se actualizan, una que solo cambió de nombre se renombra sin
+          duplicarse, y nunca se borra nada. Las dotes también forman parte del respaldo completo de Más.
         </p>
         <div className="actions">
           <button className="btn secondary" onClick={() => void loadUnique()}>
@@ -318,13 +326,13 @@ export function DotesScreen() {
             Exportar dotes (.json)
           </button>
           <button className="btn secondary" onClick={() => fileInput.current?.click()}>
-            Importar dotes
+            Importar dotes (PDF, Word, texto o .json)
           </button>
         </div>
         <input
           ref={fileInput}
           type="file"
-          accept="application/json,.json"
+          accept=".json,.pdf,.docx,.md,.markdown,.txt,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
           aria-label="Archivo de dotes"
           hidden
           onChange={(e) => {

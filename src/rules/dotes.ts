@@ -148,6 +148,8 @@ export interface MergeResult {
   added: number
   updated: number
   unchanged: number
+  /** Dotes que cambiaron de nombre y mantuvieron todo lo demás (se actualizan sin duplicarse). */
+  renamed?: number
 }
 
 /** Una dote sin espacios de más; la categoría y los sugeridos solo si tienen contenido. */
@@ -202,11 +204,29 @@ export function mergeDotes(
   const key = (d: { type: DoteType; name: string }) => `${d.type}:${normalizeDoteName(d.name)}`
   const byKey = new Map(existing.map((d) => [key(d), d]))
   const result: MergeResult = { added: 0, updated: 0, unchanged: 0 }
+  const incomingKeys = new Set(incoming.map((d) => key(d)))
+  const same = (a: string, b: string) => normalizeDoteName(a) === normalizeDoteName(b)
 
   for (const dote of incoming) {
     const clean = cleanDote(dote)
     const current = byKey.get(key(clean))
     if (!current) {
+      // Sin dote con ese nombre: si una de las que ya había (y que el archivo no menciona) es idéntica salvo el
+      // nombre, se trata como un cambio de nombre en vez de agregar un duplicado.
+      const renamedFrom = [...byKey.values()].find(
+        (d) =>
+          !incomingKeys.has(key(d)) &&
+          d.type === clean.type &&
+          d.tier === clean.tier &&
+          same(d.use, clean.use) &&
+          same(d.description, clean.description),
+      )
+      if (renamedFrom) {
+        byKey.delete(key(renamedFrom))
+        byKey.set(key(clean), { ...renamedFrom, ...clean, updatedAt: now })
+        result.renamed = (result.renamed ?? 0) + 1
+        continue
+      }
       byKey.set(key(clean), { ...clean, id: crypto.randomUUID(), createdAt: now, updatedAt: now })
       result.added++
     } else if (

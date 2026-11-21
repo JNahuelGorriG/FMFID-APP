@@ -217,7 +217,7 @@ describe('pestaña Dotes', () => {
     file.text = async () => json
     fireEvent.change(await screen.findByLabelText('Archivo de dotes'), { target: { files: [file] } })
 
-    expect(await screen.findByText(/Dotes: 1 nuevas, 1 actualizadas y 0 sin cambios, y 1 hoja\(s\) de reglas/)).toBeTruthy()
+    expect(await screen.findByText(/Leí el archivo de dotes: 1 dotes nuevas, 1 actualizadas y 0 sin cambios, y 1 hoja\(s\) de reglas/)).toBeTruthy()
     expect((await doteRepo.list()).map((d) => d.name).sort()).toEqual(['Chispa', 'Mandoble'])
     // las reglas quedan para consultar
     expect(await screen.findByText('Dotes: reglas generales')).toBeTruthy()
