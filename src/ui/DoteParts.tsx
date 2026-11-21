@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DOTE_TYPES, allowedTiers, doteTypeOfBranch, ladderTier, sortDotes } from '../rules'
+import { DOTE_TYPES, allowedTiers, doteCategories, doteTypeOfBranch, ladderTier, sortDotes, suggestedCategory } from '../rules'
 import type { BranchId, CatalogDote, DoteTier, DoteType } from '../rules'
 import { SelectField } from './fields'
 import { DOTE_TYPE_LABELS } from './format'
@@ -65,6 +65,11 @@ interface PickerProps {
   quiet?: boolean
   /** Lo que dice la primera opción (la de no elegir ninguna). */
   emptyLabel?: string
+  /**
+   * El personaje que elige. Sirve para sugerirle las dotes únicas de su categoría; puede elegir las de cualquier
+   * otra.
+   */
+  character?: { name: string; className?: string }
 }
 
 /**
@@ -83,11 +88,15 @@ export function DotePicker({
   showPreview = true,
   quiet = false,
   emptyLabel = 'Escribir a mano o decidir después',
+  character,
 }: PickerProps) {
   const suggested = branch ? doteTypeOfBranch(branch) : null
   const [type, setType] = useState<DoteType | 'todos'>(suggested ?? 'todos')
   const [query, setQuery] = useState('')
   const [showAll, setShowAll] = useState(false)
+  const categories = doteCategories(catalog)
+  const mine = character ? suggestedCategory(catalog, character) : null
+  const [category, setCategory] = useState<string>(mine ?? 'todas')
 
   if (quiet && catalog.length === 0) return null
 
@@ -96,7 +105,8 @@ export function DotePicker({
   const text = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   const q = text(query).trim()
 
-  const ofType = sortDotes(catalog.filter((d) => type === 'todos' || d.type === type))
+  const byCategory = (d: CatalogDote) => type !== 'unico' || category === 'todas' || d.category === category
+  const ofType = sortDotes(catalog.filter((d) => (type === 'todos' || d.type === type) && byCategory(d)))
   const matching = q === '' ? ofType : ofType.filter((d) => [d.name, d.use, d.description].some((f) => text(f).includes(q)))
   const offered =
     allowed && !showAll ? matching.filter((d) => d.type === 'unico' || allowed.includes(d.tier) || d.id === value) : matching
@@ -113,6 +123,17 @@ export function DotePicker({
         ]}
         onChange={(t) => setType(t)}
       />
+      {type === 'unico' && categories.length > 0 && (
+        <SelectField
+          label={`${label} · categoría`}
+          value={category}
+          options={[
+            { value: 'todas', label: 'Todas las categorías' },
+            ...categories.map((c) => ({ value: c, label: `${c}${c === mine ? ' (la de este personaje)' : ''}` })),
+          ]}
+          onChange={setCategory}
+        />
+      )}
       <label className="field">
         <span className="small muted">Buscar</span>
         <input

@@ -7,7 +7,7 @@ import { armorActive, defenseAgainst } from './profile'
 import type { AttackType, Profile } from './profile'
 import type { NpcParticipantState, PcState } from './state'
 import type { StatName } from './types'
-import { mitigateWithArmor, woundCategory, woundsFromTable } from './wounds'
+import { lowerCategory, mitigateWithArmor, woundCategory, woundsFromTable } from './wounds'
 import type { Wounds, WoundCategory } from './wounds'
 
 export type { AttackType } from './profile'
@@ -46,9 +46,11 @@ export interface DamageStage {
   armored: boolean
   /** Categoría antes de la armadura. */
   category: WoundCategory
-  /** Categoría después de la armadura. */
+  /** Categoría después de la armadura y de bajar tiers. */
   applied: WoundCategory
   armorSpent: number
+  /** Cuántos tiers de daño se bajaron (habilidades que reducen el daño). */
+  tierDown: number
 }
 
 /**
@@ -63,7 +65,7 @@ export function damageStage(
   attacker: Profile,
   defender: Profile,
   type: AttackType,
-  override: { damage?: number; defense?: number; extra?: number } = {},
+  override: { damage?: number; defense?: number; extra?: number; tierDown?: number } = {},
   defenseType: AttackType = type,
 ): DamageStage {
   const damage = override.damage ?? attacker.damage[type] + (override.extra ?? 0)
@@ -78,7 +80,10 @@ export function damageStage(
     const result = mitigateWithArmor(category, tracked ? armor.usesLeft : Number.MAX_SAFE_INTEGER)
     mitigation = { applied: result.applied, usesSpent: tracked ? result.usesSpent : 0 }
   }
-  return { damage, defense, armored: base.armored, category, applied: mitigation.applied, armorSpent: mitigation.usesSpent }
+  // Una habilidad que baja el tier del daño actúa sobre la herida que queda después de la armadura.
+  const tierDown = Math.max(0, Math.round(override.tierDown ?? 0))
+  const applied = lowerCategory(mitigation.applied, tierDown)
+  return { damage, defense, armored: base.armored, category, applied, armorSpent: mitigation.usesSpent, tierDown }
 }
 
 /** Heridas que recibe un jugador según la categoría aplicada y su resultado de resistencia. */
@@ -135,10 +140,16 @@ export function applyToPcDetailed(pc: PcState, wounds: Wounds, armorSpent: numbe
 /** Aplica daño en puntos a un NPC: la barrera absorbe primero y el resto baja su vida. */
 export function applyToNpc(npc: NpcParticipantState, points: number): NpcParticipantState {
   const absorbed = absorbPointBarriers(npc.barriers, Math.max(0, points))
+  let loss = absorbed.remaining
+  if (npc.group && npc.group.perMember > 0 && npc.hpCurrent > 0) {
+    // En una manada un ataque golpea a un solo enemigo: lo que sobra de su vida no pasa al siguiente.
+    const inLast = npc.hpCurrent % npc.group.perMember === 0 ? npc.group.perMember : npc.hpCurrent % npc.group.perMember
+    loss = Math.min(loss, inLast)
+  }
   return {
     ...npc,
     barriers: absorbed.barriers,
-    hpCurrent: Math.max(0, npc.hpCurrent - absorbed.remaining),
+    hpCurrent: Math.max(0, npc.hpCurrent - loss),
   }
 }
 

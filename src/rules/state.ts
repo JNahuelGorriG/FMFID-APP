@@ -125,6 +125,20 @@ export interface NpcParticipantState {
   ascendancePercent?: number
   /** Barra de saturación por curación, en porcentaje (0 a 100). La lleva el GM a mano. */
   saturation: number
+  /** Si es una manada: varios enemigos iguales que comparten ficha, vida y rango. */
+  group?: NpcGroup
+}
+
+/** Datos de una manada. La vida grupal es hpMax = miembros × vida individual. */
+export interface NpcGroup {
+  /** Cantidad de enemigos al empezar. */
+  size: number
+  /** Vida de cada enemigo. */
+  perMember: number
+  /** Rango más bajo al que se puede bajar al grupo. */
+  rankFloor: string
+  /** Rango con el que empezó el grupo. */
+  startRank: string
 }
 
 export function initialNpcState(profile: EnemyProfile): NpcParticipantState {

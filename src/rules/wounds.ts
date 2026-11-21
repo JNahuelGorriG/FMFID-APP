@@ -60,6 +60,14 @@ export interface ArmorMitigation {
  * (la categoría antes de bajarla). Las leves no gastan usos.
  * Sin usos disponibles no mitiga. Si le quedan menos usos que el costo, gasta los que tenga.
  */
+const ORDER: readonly WoundCategory[] = ['leve', 'medio', 'fuerte', 'letal']
+
+/** Baja la categoría de una herida `steps` pasos (letal → fuerte → medio → leve). Más abajo de leve no baja. */
+export function lowerCategory(category: WoundCategory, steps: number): WoundCategory {
+  const index = Math.max(0, ORDER.indexOf(category) - Math.max(0, Math.round(steps)))
+  return ORDER[index]
+}
+
 export function mitigateWithArmor(category: WoundCategory, usesLeft: number): ArmorMitigation {
   if (usesLeft <= 0 || category === 'leve') return { applied: category, usesSpent: 0 }
   return {

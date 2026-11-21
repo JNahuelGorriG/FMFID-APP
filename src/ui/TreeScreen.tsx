@@ -244,6 +244,7 @@ function TreeView({ character, onBack }: { character: Character; onBack: () => v
         count={doteCount}
         onSave={() => void saveDotes()}
         onMessage={setMessage}
+        character={character}
       />
 
       <StatPointsCard character={character} />
@@ -422,6 +423,7 @@ function NodeCard({
               {eChoice === 'dote' && (
                 <DotePicker
                   branch={node.branch}
+                  character={character}
                   catalog={catalog}
                   count={doteCount}
                   ignoreLadder
@@ -475,6 +477,7 @@ function NodeCard({
               {choice === 'dote' && (
                 <DotePicker
                   branch={node.branch}
+                  character={character}
                   catalog={catalog}
                   count={doteCount}
                   value={catalogId}

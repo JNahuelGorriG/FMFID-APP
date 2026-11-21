@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { orderedParticipants } from '../rules'
 import { combatRepo } from './data'
 import { AddView } from './combat/AddView'
+import { AreaAttackView } from './combat/AreaAttackView'
 import { AttackView } from './combat/AttackView'
 import { EfectosView } from './combat/EfectosView'
 import { ChecksView } from './combat/ChecksView'
@@ -34,6 +35,7 @@ export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props
   const combat = useLiveQuery(() => combatRepo.get(id), [id])
   const profiles = useProfiles(combat)
   const [section, setSection] = useState<Section>('turnos')
+  const [attackMode, setAttackMode] = useState<'uno' | 'varios'>('uno')
 
   if (combat === undefined || profiles === undefined) return <p className="muted">Cargando…</p>
 
@@ -76,7 +78,19 @@ export function CombatScreen({ id, onBack, onOpenParticipant, onDeleted }: Props
           }}
         />
       )}
-      {section === 'ataque' && <AttackView combat={combat} profiles={profiles} />}
+      {section === 'ataque' && (
+        <>
+          <div className="seg" role="group" aria-label="Objetivos del ataque">
+            <button className={attackMode === 'uno' ? 'tab active' : 'tab'} onClick={() => setAttackMode('uno')}>
+              Un objetivo
+            </button>
+            <button className={attackMode === 'varios' ? 'tab active' : 'tab'} onClick={() => setAttackMode('varios')}>
+              Varios objetivos
+            </button>
+          </div>
+          {attackMode === 'uno' ? <AttackView combat={combat} profiles={profiles} /> : <AreaAttackView combat={combat} profiles={profiles} />}
+        </>
+      )}
       {section === 'efectos' && <EfectosView combat={combat} profiles={profiles} />}
       {section === 'comparar' && <CompareView profiles={profiles} />}
       {section === 'checks' && <ChecksView profiles={profiles} />}

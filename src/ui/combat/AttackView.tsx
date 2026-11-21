@@ -72,6 +72,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const [defense, setDefense] = useState<number | undefined>(undefined)
   const [defenseChoice, setDefenseChoice] = useState<AttackType | null>(null)
   const [boosts, setBoosts] = useState<(keyof Techniques)[]>([])
+  const [tierDown, setTierDown] = useState(0)
   const [lastResult, setLastResult] = useState('')
   const [d8, setD8] = useState<number | undefined>(undefined)
   const [d6, setD6] = useState<number | undefined>(undefined)
@@ -116,9 +117,9 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
   const adjustAscendance = (delta: number) => void combatRepo.update(combat.id, (c) => adjustAscendancePercent(c, attacker.participantId, delta))
   const techniqueName = (k: keyof Techniques) => TECHNIQUES.find((t) => t.key === k)?.name ?? k
   const parts = attacker.damageParts[type]
-  const stage = damageStage(attacker, defender, type, { damage, defense, extra }, defenseType)
+  const stage = damageStage(attacker, defender, type, { damage, defense, extra, tierDown }, defenseType)
   const stageFor = (dt: AttackType) =>
-    damageStage(attacker, defender, type, { damage, defense: dt === defenseType ? defense : undefined, extra }, dt)
+    damageStage(attacker, defender, type, { damage, defense: dt === defenseType ? defense : undefined, extra, tierDown }, dt)
   const checks: { type: AttackType; label: string; stage: ReturnType<typeof damageStage> }[] = [
     { type: 'fisico', label: 'Defensa física', stage: stageFor('fisico') },
     { type: 'magico', label: 'Defensa mágica', stage: stageFor('magico') },
@@ -157,6 +158,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     setDefense(undefined)
     setDefenseChoice(null)
     setBoosts([])
+    setTierDown(0)
     setD8(undefined)
     setD6(undefined)
     setPoints(undefined)
@@ -183,7 +185,7 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
     if (!defender) return
     if (isPc && (resistance === null || wounds === null)) return setMessage(resistanceError)
     setMessage('')
-    const result = outcome ? OUTCOME_LABELS[outcome] : 'Impacto'
+    const result = (outcome ? OUTCOME_LABELS[outcome] : 'Impacto') + (stage.tierDown > 0 ? ` (daño bajado ${stage.tierDown} tier)` : '')
     // Lo que va a pasar con la vida del defensor, para contárselo al GM (no solo "recibió tanto daño").
     const current = combat.participants.find((p) => p.id === defender.participantId)
     let consequence = ''
@@ -436,6 +438,25 @@ export function AttackView({ combat, profiles }: { combat: Combat; profiles: Pro
           )}
           .
         </p>
+        <div className="tier-down" role="group" aria-label="Bajar el tier del daño">
+          <p className="small">
+            {stage.tierDown > 0 ? (
+              <>
+                Daño bajado <strong>{stage.tierDown} tier</strong>: la herida final es <strong>{stage.applied}</strong>.
+              </>
+            ) : (
+              'Si el defensor tiene una habilidad que baja el tier del daño, úsala aquí.'
+            )}
+          </p>
+          <div className="actions">
+            <button className="btn secondary compact" disabled={stage.applied === 'leve'} onClick={() => setTierDown((n) => Math.min(3, n + 1))}>
+              Bajar un tier de daño
+            </button>
+            <button className="btn secondary compact" disabled={tierDown === 0} onClick={() => setTierDown(0)}>
+              Sin bajar tier
+            </button>
+          </div>
+        </div>
         <div className="table-wrap" aria-label="Escala del daño">
           <table className="cmp ref">
             <thead>

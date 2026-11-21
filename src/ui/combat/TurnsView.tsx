@@ -3,6 +3,7 @@ import {
   advanceRound,
   advanceTurn,
   dismissAlert,
+  groupAlive,
   orderedParticipants,
   setInitiative,
   setSide,
@@ -126,6 +127,7 @@ function ParticipantCard({
     if (participant.pc.armor) summary += ` · Armadura ${participant.pc.armor.usesLeft}/${participant.pc.armor.usesMax}`
   } else if (participant.npc) {
     summary = `Vida ${participant.npc.hpCurrent} / ${participant.npc.hpMax}`
+    if (participant.npc.group) summary = `Quedan ${groupAlive(participant.npc)} de ${participant.npc.group.size} · ${summary}`
     if (participant.npc.barriers.length > 0) summary += ` · ${participant.npc.barriers.length} barrera(s)`
     if (participant.npc.weapon) summary += ` · Arma ${participant.npc.weapon.rank}`
     if ((participant.npc.saturation ?? 0) > 0) summary += ` · Saturación ${participant.npc.saturation} %`

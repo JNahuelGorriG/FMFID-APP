@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { RANKS, addNpcParticipant, addPcParticipant, combatOptions, hasCombat, variantName } from '../../rules'
+import { RANKS, addGroupParticipant, addNpcParticipant, rankShiftedBy, addPcParticipant, combatOptions, hasCombat, variantName } from '../../rules'
 import type { Combat, NpcKind } from '../../rules'
 import { combatRepo, npcRepo, repo } from '../data'
 import { NumberField, OptionalNumberField, SelectField, TextField } from '../fields'
@@ -26,6 +26,9 @@ export function AddView({ combat }: { combat: Combat }) {
   const [npcInit, setNpcInit] = useState<number | undefined>(undefined)
   const [qty, setQty] = useState(1)
   const [side, setSide] = useState<'enemigo' | 'aliado'>('enemigo')
+  const [asGroup, setAsGroup] = useState(false)
+  const [perMember, setPerMember] = useState<number | undefined>(undefined)
+  const [floor, setFloor] = useState<string | null>(null)
 
   const found = useLiveQuery(() => npcRepo.list(query, kind), [query, kind])
   const results = (found ?? []).filter((n) => hasCombat(n))
@@ -96,6 +99,8 @@ export function AddView({ combat }: { combat: Combat }) {
                   setNpcId(n.id)
                   setVariantId('')
                   setRank(null)
+                  setPerMember(undefined)
+                  setFloor(null)
                 }}
               >
                 <span>{n.name}</span>
@@ -133,8 +138,34 @@ export function AddView({ combat }: { combat: Combat }) {
               onChange={setRank}
             />
             <TextField label="Nombre en el combate" value={npcName} onChange={setNpcName} placeholder={variantName(npcChoice.name, variantChoice?.label ?? '')} />
+            <label className="check">
+              <input type="checkbox" checked={asGroup} onChange={(e) => setAsGroup(e.target.checked)} />
+              Llevarlos como una manada (una sola ficha, vida y rango)
+            </label>
+            {asGroup && (
+              <>
+                <p className="muted small">
+                  La cantidad son los enemigos del grupo. La vida del grupo es cantidad × vida de cada uno; cada vez que
+                  baja lo que vale uno, cae un enemigo. El rango lo bajas tú cuando quieras, hasta el piso.
+                </p>
+                <div className="grid-2">
+                  <NumberField
+                    label="Vida de cada enemigo"
+                    integer
+                    value={perMember ?? variantChoice?.combat.hp.max ?? 5}
+                    onChange={(v) => setPerMember(Math.max(1, v))}
+                  />
+                  <SelectField
+                    label="Piso del rango"
+                    value={floor ?? rankShiftedBy(rankChoice, -2)}
+                    options={RANK_OPTIONS}
+                    onChange={setFloor}
+                  />
+                </div>
+              </>
+            )}
             <div className="grid-2">
-              <NumberField label="Cantidad" integer value={qty} onChange={(v) => setQty(Math.max(1, v))} />
+              <NumberField label={asGroup ? 'Enemigos en el grupo' : 'Cantidad'} integer value={qty} onChange={(v) => setQty(Math.max(1, v))} />
               <OptionalNumberField label="Iniciativa del NPC" value={npcInit} onChange={setNpcInit} />
             </div>
             <SelectField
@@ -152,6 +183,18 @@ export function AddView({ combat }: { combat: Combat }) {
                 if (!variantChoice) return
                 const base = npcName.trim() || variantName(npcChoice.name, variantChoice.label)
                 const profile = { ...variantChoice.combat, rank: rankChoice }
+                if (asGroup) {
+                  void combatRepo.update(combat.id, (c) =>
+                    addGroupParticipant(
+                      c,
+                      { name: base, profile },
+                      { size: qty, perMember: perMember ?? variantChoice.combat.hp.max ?? 5, rankFloor: floor ?? rankShiftedBy(rankChoice, -2) },
+                      npcInit ?? null,
+                      side,
+                    ),
+                  )
+                  return
+                }
                 void combatRepo.update(combat.id, (c) => {
                   let next = c
                   for (let i = 1; i <= qty; i++) {
@@ -161,7 +204,7 @@ export function AddView({ combat }: { combat: Combat }) {
                 })
               }}
             >
-              Agregar al combate
+              {asGroup ? 'Agregar el grupo al combate' : 'Agregar al combate'}
             </button>
           </>
         )}

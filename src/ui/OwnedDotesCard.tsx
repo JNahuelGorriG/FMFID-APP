@@ -14,6 +14,8 @@ interface Props {
   count: number
   onSave: () => void
   onMessage: (message: string) => void
+  /** Para sugerirle las dotes únicas de su categoría. */
+  character?: { name: string; className?: string }
 }
 
 /** La dote con los datos de la del catálogo; sin dote, la deja suelta del catálogo con el texto que tenía. */
@@ -28,7 +30,7 @@ function withCatalog(d: Dote, picked: CatalogDote | null): Dote {
  * de dote que se ofrece en cada una lo elige quien carga; la rama solo lo sugiere. Para no tener que buscar la caja
  * de cada dote, se puede elegir una del catálogo y la app la pone en un espacio libre.
  */
-export function OwnedDotesCard({ dotes, setDotes, catalog, count, onSave, onMessage }: Props) {
+export function OwnedDotesCard({ dotes, setDotes, catalog, count, onSave, onMessage, character }: Props) {
   const [changing, setChanging] = useState<string[]>([])
   const byId = new Map(catalog.map((d) => [d.id, d]))
   const isLinked = (d: Dote) => !!d.catalogId && byId.has(d.catalogId)
@@ -83,6 +85,7 @@ export function OwnedDotesCard({ dotes, setDotes, catalog, count, onSave, onMess
             catalog={catalog}
             count={count}
             ignoreLadder
+            character={character}
             showPreview={false}
             quiet
             label="Poner una dote en un espacio libre"
@@ -135,6 +138,7 @@ export function OwnedDotesCard({ dotes, setDotes, catalog, count, onSave, onMess
                 catalog={catalog}
                 count={count}
                 ignoreLadder
+                character={character}
                 showPreview={false}
                 quiet
                 label={`Dote ${i + 1} del catálogo`}

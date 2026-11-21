@@ -42,6 +42,7 @@ import type {
 import { combatRepo, repo, settingsRepo } from './data'
 import { EffectsPanel } from './EffectsPanel'
 import { clampSaturation } from '../rules'
+import { GroupCard } from './GroupCard'
 import { SaturationCard } from './SaturationCard'
 import { SpiritCard } from './SpiritCard'
 import { StatCapsCard } from './StatCapsCard'
@@ -721,7 +722,9 @@ function NpcPanel({
 
   return (
     <>
-      <Section title="Vida">
+      {npc.group && <GroupCard npc={npc} onChange={(change) => void update(change)} />}
+
+      <Section title={npc.group ? 'Vida del grupo' : 'Vida'}>
         <div className="grid-2">
           <Stepper
             label="Vida actual"

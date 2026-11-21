@@ -21,6 +21,10 @@ export interface CatalogDote {
   /** Cómo se usa: "Pasiva", "Reacción, 2 por batalla", "2 por descanso largo"... */
   use: string
   description: string
+  /** Solo dotes únicas: la categoría a la que pertenecen ("Tanque", "Guerrero de Fuerza"...). */
+  category?: string
+  /** Solo dotes únicas: personajes a los que se sugiere ("Edward"). Es una sugerencia: cualquiera puede elegirla. */
+  suggestedFor?: string[]
   createdAt: string
   updatedAt: string
 }
@@ -146,6 +150,45 @@ export interface MergeResult {
   unchanged: number
 }
 
+/** Una dote sin espacios de más; la categoría y los sugeridos solo si tienen contenido. */
+export function cleanDote(dote: NewDote): NewDote {
+  const category = dote.category?.trim()
+  const suggestedFor = (dote.suggestedFor ?? []).map((n) => n.trim()).filter(Boolean)
+  return {
+    tier: dote.tier,
+    name: dote.name.trim(),
+    type: dote.type,
+    use: dote.use.trim(),
+    description: dote.description.trim(),
+    ...(category ? { category } : {}),
+    ...(suggestedFor.length > 0 ? { suggestedFor } : {}),
+  }
+}
+
+/** Las categorías de dotes únicas que hay en el catálogo, en el orden en que aparecen. */
+export function doteCategories(catalog: Pick<CatalogDote, 'type' | 'category'>[]): string[] {
+  const seen: string[] = []
+  for (const d of catalog) if (d.type === 'unico' && d.category && !seen.includes(d.category)) seen.push(d.category)
+  return seen
+}
+
+/**
+ * La categoría de dotes únicas que le corresponde a un personaje: la que lo nombra entre sus sugeridos o la que
+ * se llama como su categoría ("Tanque"). Solo sugiere: no limita lo que puede elegir.
+ */
+export function suggestedCategory(
+  catalog: Pick<CatalogDote, 'type' | 'category' | 'suggestedFor'>[],
+  character: { name: string; className?: string },
+): string | null {
+  const name = normalizeDoteName(character.name)
+  const cls = normalizeDoteName(character.className ?? '')
+  const unique = catalog.filter((d) => d.type === 'unico' && d.category)
+  const byName = unique.find((d) => (d.suggestedFor ?? []).some((n) => normalizeDoteName(n) === name))
+  if (byName) return byName.category ?? null
+  const byClass = cls === '' ? undefined : unique.find((d) => normalizeDoteName(d.category ?? '') === cls)
+  return byClass?.category ?? null
+}
+
 /**
  * Suma dotes a un catálogo. Una dote nueva se empareja con la que ya existe por tipo y nombre (sin tildes ni
  * mayúsculas): si cambió algo se actualiza y conserva su identidad, y si no, queda igual. Las que no existían
@@ -161,13 +204,7 @@ export function mergeDotes(
   const result: MergeResult = { added: 0, updated: 0, unchanged: 0 }
 
   for (const dote of incoming) {
-    const clean: NewDote = {
-      tier: dote.tier,
-      name: dote.name.trim(),
-      type: dote.type,
-      use: dote.use.trim(),
-      description: dote.description.trim(),
-    }
+    const clean = cleanDote(dote)
     const current = byKey.get(key(clean))
     if (!current) {
       byKey.set(key(clean), { ...clean, id: crypto.randomUUID(), createdAt: now, updatedAt: now })
@@ -176,7 +213,9 @@ export function mergeDotes(
       current.tier !== clean.tier ||
       current.use !== clean.use ||
       current.description !== clean.description ||
-      current.name !== clean.name
+      current.name !== clean.name ||
+      (current.category ?? '') !== (clean.category ?? '') ||
+      JSON.stringify(current.suggestedFor ?? []) !== JSON.stringify(clean.suggestedFor ?? [])
     ) {
       byKey.set(key(clean), { ...current, ...clean, updatedAt: now })
       result.updated++

@@ -1,15 +1,9 @@
-import { DOTE_TIERS, DOTE_TYPES, mergeDotes, sortDotes, validateDote } from '../rules'
+import { DOTE_TIERS, DOTE_TYPES, UNIQUE_DOTES, cleanDote, mergeDotes, sortDotes, validateDote } from '../rules'
 import type { CatalogDote, MergeResult, NewDote } from '../rules'
 import type { AppDB } from './db'
 import type { ReferenceSheet } from './settings'
 
-const clean = (data: NewDote): NewDote => ({
-  tier: data.tier,
-  name: data.name.trim(),
-  type: data.type,
-  use: data.use.trim(),
-  description: data.description.trim(),
-})
+const clean = cleanDote
 
 function assertValid(data: NewDote): void {
   const errors = validateDote(data)
@@ -40,7 +34,8 @@ export function createDoteRepository(db: AppDB) {
       assertValid(data)
       const current = await db.dotes.get(id)
       if (!current) throw new Error('Esa dote ya no existe.')
-      const next: CatalogDote = { ...current, ...clean(data), updatedAt: new Date().toISOString() }
+      const { category: _c, suggestedFor: _s, ...rest } = current
+      const next: CatalogDote = { ...rest, ...clean(data), updatedAt: new Date().toISOString() }
       await db.dotes.put(next)
       return next
     },
@@ -110,7 +105,7 @@ export interface DotesImportResult extends MergeResult {
 export async function importDotes(db: AppDB, data: unknown): Promise<DotesImportResult> {
   const file = parseDotesFile(data)
   const incoming: NewDote[] = file.dotes.map((d) =>
-    clean({ tier: d.tier, name: d.name, type: d.type, use: d.use ?? '', description: d.description ?? '' }),
+    clean({ tier: d.tier, name: d.name, type: d.type, use: d.use ?? '', description: d.description ?? '', category: d.category, suggestedFor: Array.isArray(d.suggestedFor) ? d.suggestedFor : undefined }),
   )
   for (const dote of incoming) assertValid(dote)
 
@@ -126,5 +121,14 @@ export async function importDotes(db: AppDB, data: unknown): Promise<DotesImport
       await db.settings.put({ key: DOTE_SHEETS_KEY, value: merged })
     }
     return { ...result, sheets: sheets.length }
+  })
+}
+
+/** Carga las dotes únicas de la 6ta edición. Las que ya estaban se actualizan y nunca se borra nada. */
+export async function loadUniqueDotes(db: AppDB): Promise<MergeResult> {
+  return db.transaction('rw', db.dotes, async () => {
+    const { next, result } = mergeDotes(await db.dotes.toArray(), UNIQUE_DOTES)
+    await db.dotes.bulkPut(next)
+    return result
   })
 }

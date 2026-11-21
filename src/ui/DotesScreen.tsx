@@ -1,12 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useRef, useState } from 'react'
-import { db, exportDotes, importDotes } from '../db'
+import { db, exportDotes, importDotes, loadUniqueDotes } from '../db'
 import {
   DOTE_SORT_LABELS,
   DOTE_TIERS,
   DOTE_TYPES,
   USE_KIND_LABELS,
   USE_SUGGESTIONS,
+  doteCategories,
   doteOwners,
   filterDotes,
   normalizeDoteName,
@@ -73,6 +74,11 @@ export function DotesScreen() {
     link.click()
     URL.revokeObjectURL(url)
     setMessage(`Se exportaron ${file.dotes.length} dotes.`)
+  }
+
+  async function loadUnique() {
+    const r = await loadUniqueDotes(db)
+    setMessage(`Dotes únicas: ${r.added} nuevas, ${r.updated} actualizadas y ${r.unchanged} sin cambios.`)
   }
 
   async function load(file: File) {
@@ -171,6 +177,19 @@ export function DotesScreen() {
         </p>
       )}
 
+      {!dotes.some((d) => d.type === 'unico') && (
+        <div className="card">
+          <p>Todavía no hay dotes únicas.</p>
+          <p className="muted small">
+            Cargá las 126 de la 6ta edición (18 por categoría). Cada categoría se sugiere a su personaje, pero cualquiera
+            puede elegir cualquiera.
+          </p>
+          <button className="btn" onClick={() => void loadUnique()}>
+            Cargar las dotes únicas
+          </button>
+        </div>
+      )}
+
       {dotes.length === 0 && (
         <div className="card">
           <p>Todavía no hay dotes.</p>
@@ -186,20 +205,34 @@ export function DotesScreen() {
           const list = shown.filter((d) => d.type === type)
           return (
             <Section key={type} title={`${DOTE_TYPE_LABELS[type]} (${list.length})`} storageKey={`Dotes: ${type}`}>
-              <ul className="dotes">
-                {list.map((d) => (
-                  <li key={d.id} className="dote-row">
-                    <DoteInfo tier={d.tier} name={d.name} use={d.use} description={d.description} extra={ownersText(d)} />
-                    <button
-                      className="btn secondary compact"
-                      aria-label={`Editar ${d.name}`}
-                      onClick={() => setEditing({ id: d.id, type: d.type })}
-                    >
-                      Editar
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {(type === 'unico' ? [...doteCategories(list), ''] : ['']).map((cat) => {
+                const part = type === 'unico' ? list.filter((d) => (d.category ?? '') === cat) : list
+                if (part.length === 0) return null
+                return (
+                  <div key={cat}>
+                    {type === 'unico' && (
+                      <h3>
+                        {cat || 'Sin categoría'}
+                        {part[0].suggestedFor?.length ? ` · ${part[0].suggestedFor.join(', ')}` : ''} ({part.length})
+                      </h3>
+                    )}
+                    <ul className="dotes">
+                      {part.map((d) => (
+                        <li key={d.id} className="dote-row">
+                          <DoteInfo tier={d.tier} name={d.name} use={d.use} description={d.description} extra={ownersText(d)} />
+                          <button
+                            className="btn secondary compact"
+                            aria-label={`Editar ${d.name}`}
+                            onClick={() => setEditing({ id: d.id, type: d.type })}
+                          >
+                            Editar
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
             </Section>
           )
         })}
@@ -278,6 +311,9 @@ export function DotesScreen() {
           nunca se borra nada. Las dotes también forman parte del respaldo completo de Más.
         </p>
         <div className="actions">
+          <button className="btn secondary" onClick={() => void loadUnique()}>
+            Cargar las dotes únicas (6ta edición)
+          </button>
           <button className="btn secondary" onClick={() => void download()}>
             Exportar dotes (.json)
           </button>
@@ -360,7 +396,9 @@ interface FormProps {
 /** Alta y edición de una dote: tier, nombre, tipo, uso y descripción. */
 function DoteForm({ dote, defaultType, all, onClose, onDone }: FormProps) {
   const [draft, setDraft] = useState<NewDote>(
-    dote ? { tier: dote.tier, name: dote.name, type: dote.type, use: dote.use, description: dote.description } : emptyDote(defaultType),
+    dote
+      ? { tier: dote.tier, name: dote.name, type: dote.type, use: dote.use, description: dote.description, category: dote.category, suggestedFor: dote.suggestedFor }
+      : emptyDote(defaultType),
   )
   const [errors, setErrors] = useState<string[]>([])
   const set = <K extends keyof NewDote>(key: K, value: NewDote[K]) => setDraft((d) => ({ ...d, [key]: value }))
@@ -418,6 +456,31 @@ function DoteForm({ dote, defaultType, all, onClose, onDone }: FormProps) {
         </datalist>
       </label>
       <TextAreaField label="Descripción" value={draft.description} onChange={(v) => set('description', v)} />
+      {draft.type === 'unico' && (
+        <>
+          <label className="field">
+            <span className="small muted">Categoría (solo dotes únicas)</span>
+            <input
+              aria-label="Categoría"
+              list="categorias-de-dotes"
+              value={draft.category ?? ''}
+              placeholder="Tanque, Healer…"
+              onChange={(e) => set('category', e.target.value)}
+            />
+            <datalist id="categorias-de-dotes">
+              {doteCategories(all).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </label>
+          <TextField
+            label="Personajes a los que se sugiere (separados por coma)"
+            value={(draft.suggestedFor ?? []).join(', ')}
+            onChange={(v) => set('suggestedFor', v.split(',').map((x) => x.trim()).filter(Boolean))}
+          />
+          <p className="muted small">Es solo una sugerencia: cualquier personaje puede elegir cualquier dote única.</p>
+        </>
+      )}
       {errors.length > 0 && (
         <ul className="errors" role="alert">
           {errors.map((e) => (
